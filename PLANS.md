@@ -2,36 +2,36 @@
 
 ## Goals
 
-- Add a root `portolan` facade crate that gives downstream users one calmer
-  entry point into the workspace.
-- Keep the facade curated rather than exhaustive so it teaches one canonical
-  workflow instead of flattening the crate graph blindly.
-- Prove the facade by updating one real example to depend on `portolan`
-  instead of importing many `portolan_*` crates directly.
+- Make the public Portolan docs navigable with intra-doc links instead of plain
+  type names.
+- Rewrite type-level docs so each public type explains where it fits in the
+  broader retrieval workflow.
+- Make it clearer how callers usually obtain or use a type when it is produced
+  by another API rather than constructed directly.
 
 ## Non-Goals
 
-- Do not turn `portolan` into a second copy of every lower-level API.
-- Do not re-export all of Leit or hide backend-specific setup behind Portolan.
-- Do not change crate ownership boundaries underneath the existing workspace.
+- Do not change crate ownership boundaries or add new production features.
+- Do not redesign the workflow APIs while documenting them.
+- Do not try to make every helper type equally prominent; focus on teaching the
+  main path and then situating the helper types around it.
 
 ## Steps
 
-1. Add `crates/portolan` with a small curated top-level API and nested module
-   re-exports for lower-level or optional crates.
-2. Gate heavier facade modules such as `leit`, `schema`, `ingest`, and
-   `observe` behind explicit features so the root crate does not force extra
-   dependencies by default.
-3. Update workspace docs and CI package lists for the new publishable crate.
-4. Switch `examples/command_palette` to the facade crate to prove the preferred
-   way in.
-5. Run fmt, clippy, tests, and docs before committing.
+1. Audit the main public crates for plain-text type references and thin docs.
+2. Improve the core workflow docs in `portolan_core`, `portolan_query`,
+   `portolan_source`, and `portolan_route`.
+3. Improve the supporting docs in `portolan_schema`, `portolan_leit`,
+   `portolan_observe`, `portolan_ingest`, and the root `portolan` facade.
+4. Run rustdoc, clippy, and tests so broken links or stale wording surface
+   immediately.
+5. Commit the docs pass once the public story feels coherent.
 
 ## Risks
 
-- A facade crate can become an unprincipled export barrel if the curated
-  top-level path is not selective.
-- Optional feature wiring can accidentally drag std or backend dependencies into
-  the minimal facade path.
-- The example should get simpler; if it only changes names, the facade is not
-  earning its keep.
+- Intra-doc links can fail silently in review but loudly in `cargo doc`, so the
+  validation pass matters.
+- Over-documenting every small helper the same way can create noise instead of
+  clarity.
+- It is easy to describe future intent instead of the current implementation;
+  the docs need to stay honest.

@@ -5,6 +5,9 @@
 //!
 //! This crate intentionally stays generic over stage types so routing and
 //! future execution layers can reuse the same trace vocabulary.
+//!
+//! Callers usually obtain these types from traced router methods that capture a
+//! [`RetrievalTrace`], rather than constructing most of them directly.
 
 #![no_std]
 
@@ -19,6 +22,9 @@ use alloc::vec::Vec;
 use portolan_core::RetrievalBudget;
 
 /// Summary of one entered stage during retrieval execution.
+///
+/// [`RetrievalTrace::stages`] contains these summaries in execution order so
+/// diagnostics can explain what each stage contributed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StageRecord<Stage> {
     /// Stage that ran.
@@ -36,6 +42,9 @@ pub struct StageRecord<Stage> {
 }
 
 /// Reason that routed retrieval stopped before exhausting the plan.
+///
+/// [`RetrievalTrace::stop_reason`] carries this when a route policy ends a pass
+/// early.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StopReason<Stage> {
     /// Routing stopped after a stage emitted at least the configured number of hits.
@@ -55,6 +64,9 @@ pub enum StopReason<Stage> {
 }
 
 /// One source visit during retrieval execution.
+///
+/// [`RetrievalTrace::visits`] stores one of these records for each entered
+/// source.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceVisit<Stage> {
     /// Stage in which the source ran.
@@ -64,6 +76,10 @@ pub struct SourceVisit<Stage> {
 }
 
 /// Trace of one retrieval pass.
+///
+/// This is the detailed diagnostics value for one routed retrieval request.
+/// Callers usually obtain it from a traced router method and then inspect the
+/// visits, stage summaries, totals, and any early-stop reason.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RetrievalTrace<Stage> {
     /// Raw query text.
@@ -92,6 +108,9 @@ pub struct RetrievalTrace<Stage> {
 
 impl<Stage> RetrievalTrace<Stage> {
     /// Create an empty trace for one retrieval pass.
+    ///
+    /// Router implementations use this at the start of a traced retrieval
+    /// request.
     pub fn new(query: impl Into<String>, budget: RetrievalBudget) -> Self {
         Self {
             query: query.into(),
@@ -109,6 +128,8 @@ impl<Stage> RetrievalTrace<Stage> {
     }
 
     /// Record one source visit.
+    ///
+    /// Execution layers call this each time one source runs.
     pub fn record_visit(&mut self, stage: Stage, source: impl Into<String>) {
         self.sources_visited = self
             .sources_visited
@@ -121,6 +142,9 @@ impl<Stage> RetrievalTrace<Stage> {
     }
 
     /// Record that one stage was entered.
+    ///
+    /// Execution layers call this after one stage completes so the trace can
+    /// retain per-stage totals.
     pub fn record_stage(
         &mut self,
         stage: Stage,
@@ -161,6 +185,9 @@ impl<Stage> RetrievalTrace<Stage> {
     }
 
     /// Record that retrieval stopped early.
+    ///
+    /// Execution layers call this when a stop policy ends the retrieval pass
+    /// before the full route plan runs.
     pub fn record_stop_reason(&mut self, stop_reason: StopReason<Stage>) {
         self.stop_reason = Some(stop_reason);
     }

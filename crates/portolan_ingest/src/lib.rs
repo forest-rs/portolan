@@ -4,6 +4,9 @@
 //! Projection-to-index materialization for Portolan.
 //!
 //! The first slice targets Leit's in-memory index builder.
+//!
+//! Callers usually build a [`ProjectionCatalog`] first, then pass it into
+//! [`build_leit_index`] to obtain a materialized Leit [`InMemoryIndex`].
 
 #![no_std]
 
@@ -19,6 +22,9 @@ use portolan_core::SubjectRef;
 use portolan_schema::ProjectionCatalog;
 
 /// Field alias registered for query planning in the materialized backend.
+///
+/// Callers construct these alongside analyzers when materializing a catalog
+/// into a Leit index with [`build_leit_index`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FieldAlias<'a> {
     /// Retrieval field identifier.
@@ -34,7 +40,12 @@ impl<'a> FieldAlias<'a> {
     }
 }
 
-/// Build a Leit in-memory index from a projection catalog.
+/// Build a Leit in-memory index from a [`ProjectionCatalog`].
+///
+/// This is the main first-slice materialization helper for Portolan. Callers
+/// usually project host values into a catalog, prepare Leit analyzers and field
+/// aliases, then call this function before constructing a Leit-backed retrieval
+/// source.
 pub fn build_leit_index<S: SubjectRef, A, M>(
     catalog: &ProjectionCatalog<S, A, M>,
     analyzers: FieldAnalyzers,

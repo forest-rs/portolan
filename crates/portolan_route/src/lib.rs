@@ -9,6 +9,10 @@
 //! - the router executes sources stage by stage into a caller sink
 //! - optional stop, reconciliation, and verification policies keep the work
 //!   budgeted and explicit
+//!
+//! Most callers enter this crate through [`RetrievalRouter`]. They build a
+//! [`RoutePlan`], choose a [`RoutePolicy`], optionally provide a
+//! [`HitVerifier`], and route one or more [`StagedRetrievalSource`] values.
 
 #![no_std]
 
@@ -25,6 +29,10 @@ use portolan_query::PortolanQuery;
 use portolan_source::{CandidateSink, RetrievalSource};
 
 /// Retrieval stage used for route planning.
+///
+/// [`StagedRetrievalSource`] implementations return one of these values from
+/// [`StagedRetrievalSource::stage`], and [`RoutePlan`] determines the order in
+/// which the router visits them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RouteStage {
     /// Materialized indexed retrieval.
@@ -36,6 +44,9 @@ pub enum RouteStage {
 }
 
 /// Statistics collected during staged routing.
+///
+/// Callers usually obtain this struct as the return value from a
+/// [`RetrievalRouter`] method that does not capture a full [`RetrievalTrace`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RouteStats {
     /// Number of sources invoked.
@@ -55,6 +66,10 @@ pub struct RouteStats {
 }
 
 /// Outcome of verifying one routed hit before it reaches the caller sink.
+///
+/// [`HitVerifier`] implementations return one of these values to tell the
+/// router whether a candidate should continue through reconciliation and final
+/// emission.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VerificationOutcome {
     /// Retain the hit and continue routing.
@@ -64,6 +79,11 @@ pub enum VerificationOutcome {
 }
 
 /// Host-owned verifier for finalizing routed hits against canonical state.
+///
+/// Callers usually pass one verifier into
+/// [`RetrievalRouter::retrieve_verified_into`] or one of the other verified
+/// router methods when hits must be checked against live host truth before they
+/// become final output.
 pub trait HitVerifier<S: SubjectRef, Context = (), A = portolan_core::StandardAffordance, E = ()> {
     /// Verify one hit before it reaches the caller sink.
     fn verify_hit(
@@ -73,7 +93,10 @@ pub trait HitVerifier<S: SubjectRef, Context = (), A = portolan_core::StandardAf
     ) -> VerificationOutcome;
 }
 
-/// Extension helpers for composing hit verifiers.
+/// Extension helpers for composing [`HitVerifier`] values.
+///
+/// Most callers use this for [`HitVerifierExt::and`] when a retrieval surface
+/// needs several small verification checks rather than one large verifier type.
 pub trait HitVerifierExt<S: SubjectRef, Context = (), A = portolan_core::StandardAffordance, E = ()>:
     HitVerifier<S, Context, A, E> + Sized
 {
@@ -145,6 +168,9 @@ where
 }
 
 /// Verifier that retains a hit only when its subject satisfies a predicate.
+///
+/// Callers usually obtain this type by calling [`subject_verifier`] rather than
+/// constructing it directly.
 #[derive(Clone, Copy, Debug)]
 pub struct SubjectVerifier<Predicate> {
     predicate: Predicate,
@@ -152,6 +178,9 @@ pub struct SubjectVerifier<Predicate> {
 
 impl<Predicate> SubjectVerifier<Predicate> {
     /// Create a subject-level verifier from one predicate.
+    ///
+    /// Most callers should prefer [`subject_verifier`], which infers the type
+    /// more cleanly at the call site.
     pub const fn new(predicate: Predicate) -> Self {
         Self { predicate }
     }
@@ -207,6 +236,9 @@ where
 }
 
 /// Verifier that retains every hit unchanged.
+///
+/// Router methods use this implicitly when callers choose APIs without an
+/// explicit verifier parameter.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoopHitVerifier;
 
@@ -224,6 +256,9 @@ where
 }
 
 /// Sequential composition of two hit verifiers.
+///
+/// Callers normally obtain this type from [`HitVerifierExt::and`] rather than
+/// naming it directly.
 #[derive(Clone, Copy, Debug)]
 pub struct AndVerifier<Left, Right> {
     left: Left,
@@ -249,6 +284,10 @@ where
 }
 
 /// Policy controlling how routed retrieval reconciles repeated subjects.
+///
+/// [`RoutePolicy`] carries one reconciliation policy for a retrieval pass.
+/// Callers typically choose the most conservative option that still matches the
+/// surface behavior they want.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ReconciliationPolicy {
     /// Retain every hit, even when multiple sources emit the same subject.
@@ -261,6 +300,9 @@ pub enum ReconciliationPolicy {
 }
 
 /// Explicit policy controlling when routing may stop before exhausting the plan.
+///
+/// Callers pass one policy into the `*_with_policy` router methods to control
+/// both early stopping and same-subject reconciliation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RoutePolicy {
     /// Stop after any stage emits at least this many retained hits.
@@ -273,6 +315,9 @@ pub struct RoutePolicy {
 
 impl RoutePolicy {
     /// Policy that always exhausts the route plan.
+    ///
+    /// This is the default behavior when callers use router methods without an
+    /// explicit [`RoutePolicy`].
     pub const fn exhaustive() -> Self {
         Self {
             stop_after_stage_hits: None,
@@ -283,6 +328,10 @@ impl RoutePolicy {
 }
 
 /// Object-safe retrieval source with an explicit route stage.
+///
+/// Hosts usually implement this trait instead of plain
+/// [`RetrievalSource`] when a source will participate in multi-source routed
+/// retrieval.
 pub trait StagedRetrievalSource<
     S: SubjectRef,
     Scope = (),
@@ -317,6 +366,9 @@ type MaybeTraceState<'a, S, Scope, Filter, Context, A, E> =
     Option<TraceState<'a, S, Scope, Filter, Context, A, E>>;
 
 /// Stage order for one retrieval pass.
+///
+/// Callers usually construct this with [`RoutePlan::standard`] and then pass it
+/// into a [`RetrievalRouter`] method.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoutePlan {
     stages: [RouteStage; 3],
@@ -324,6 +376,8 @@ pub struct RoutePlan {
 
 impl RoutePlan {
     /// Plan that prefers cheap materialized retrieval before more expensive work.
+    ///
+    /// This is the usual starting point for interactive retrieval surfaces.
     pub const fn standard() -> Self {
         Self {
             stages: [
@@ -347,6 +401,13 @@ impl Default for RoutePlan {
 }
 
 /// Router that executes staged retrieval sources in order.
+///
+/// This is the main entry point for multi-source Portolan retrieval. Callers
+/// usually provide a [`RoutePlan`], one or more [`StagedRetrievalSource`]
+/// values, a [`PortolanQuery`], a [`RetrievalContext`], and a
+/// [`RetrievalBudget`], then collect final hits in a
+/// [`portolan_source::CandidateSink`] such as
+/// [`portolan_source::CandidateBuffer`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RetrievalRouter;
 

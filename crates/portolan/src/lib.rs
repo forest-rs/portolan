@@ -25,10 +25,10 @@
 //!   Leit-backed retrieval
 //!
 //! The intended top-level workflow is:
-//! - construct a `PortolanQuery`
-//! - package one host-defined `RetrievalContext`
-//! - run sources through a `RetrievalRouter`
-//! - receive typed `PortolanHit` values with evidence and affordances
+//! - construct a [`PortolanQuery`]
+//! - package one host-defined [`RetrievalContext`]
+//! - run sources through a [`RetrievalRouter`]
+//! - receive typed [`PortolanHit`] values with [`Evidence`] and [`Affordance`]
 //!
 //! ```
 //! use portolan::{PortolanQuery, RetrievalContext, RetrievalRouter, RoutePlan};
@@ -45,44 +45,65 @@
 extern crate std;
 
 /// Lower-level core vocabulary.
+///
+/// Reach for this module when you want the narrower `portolan_core` surface
+/// rather than the curated top-level re-exports.
 pub mod core {
     pub use portolan_core::*;
 }
 
 /// Observation and trace records.
+///
+/// This module exposes the `portolan_observe` crate for callers that want full
+/// access to retrieval trace types such as [`RetrievalTrace`].
 pub mod observe {
     pub use portolan_observe::*;
 }
 
 /// Query envelope types.
+///
+/// This module exposes the smaller `portolan_query` surface directly.
 pub mod query {
     pub use portolan_query::*;
 }
 
 /// Staged routing, verification, and reconciliation.
+///
+/// This module exposes the routing layer directly when callers want the full
+/// `portolan_route` API.
 pub mod route {
     pub use portolan_route::*;
 }
 
 /// Source and sink seams.
+///
+/// This module exposes the lower-level source traits and sink helpers from
+/// `portolan_source`.
 pub mod source {
     pub use portolan_source::*;
 }
 
 #[cfg(feature = "schema")]
 /// Subject projection and schema contracts.
+///
+/// Enable the `schema` feature to use these lower-level projection types.
 pub mod schema {
     pub use portolan_schema::*;
 }
 
 #[cfg(feature = "ingest")]
 /// Projection materialization helpers.
+///
+/// Enable the `ingest` feature to materialize projection catalogs into backend
+/// indexes.
 pub mod ingest {
     pub use portolan_ingest::*;
 }
 
 #[cfg(feature = "leit")]
 /// Leit-backed retrieval adapters.
+///
+/// Enable the `leit` feature to use these materialized retrieval adapters.
 pub mod leit {
     pub use portolan_leit::*;
 }

@@ -7,6 +7,10 @@
 //! - textual lowering only
 //! - one in-memory Leit index source
 //! - host-supplied mapping from Leit document IDs to Portolan subjects
+//!
+//! Callers usually build a [`LeitSource`] around an [`InMemoryIndex`], provide
+//! a [`SubjectMapper`] and optional [`HitEnricher`], then use it as a
+//! [`RetrievalSource`] directly or through Portolan's routing layer.
 
 #![no_std]
 
@@ -27,6 +31,9 @@ use portolan_schema::{ProjectionCatalog, SubjectProjection};
 use portolan_source::{CandidateSink, RetrievalSource};
 
 /// Maps Leit document identifiers into host-defined Portolan subjects.
+///
+/// [`LeitSource`] uses this trait after Leit returns raw document IDs so the
+/// adapter can recover host subject identity and emit [`PortolanHit`] values.
 pub trait SubjectMapper<S: SubjectRef> {
     /// Map a Leit document ID into a host subject.
     fn map_subject(&self, doc_id: u32) -> Option<S>;
@@ -42,7 +49,10 @@ where
     }
 }
 
-/// Subject mapper backed by a projection catalog.
+/// Subject mapper backed by a [`ProjectionCatalog`].
+///
+/// Callers usually obtain this by calling [`CatalogSubjectMapper::new`] when
+/// their Leit index was built from a catalog of [`SubjectProjection`] values.
 #[derive(Clone, Copy, Debug)]
 pub struct CatalogSubjectMapper<'a, S: SubjectRef, A = portolan_core::StandardAffordance, M = ()> {
     catalog: &'a ProjectionCatalog<S, A, M>,
@@ -61,13 +71,19 @@ impl<S: SubjectRef, A, M> SubjectMapper<S> for CatalogSubjectMapper<'_, S, A, M>
     }
 }
 
-/// Lowers a Portolan query into the textual query string consumed by Leit.
+/// Lowers a [`PortolanQuery`] into the textual query string consumed by Leit.
+///
+/// [`LeitSource`] asks a lowerer to turn Portolan's small query envelope into
+/// the plain text shape its current backend search call expects.
 pub trait QueryLowerer<Scope = (), Filter = ()> {
     /// Lower a Portolan query into a textual Leit query.
     fn lower_query(&self, query: &PortolanQuery<Scope, Filter>) -> String;
 }
 
 /// Default textual lowering for the initial Portolan-Leit seam.
+///
+/// Callers get this automatically through [`LeitSource::new`] unless they
+/// replace it with [`LeitSource::with_lowerer`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TextQueryLowerer;
 
@@ -81,7 +97,10 @@ impl<Scope, Filter> QueryLowerer<Scope, Filter> for TextQueryLowerer {
     }
 }
 
-/// Enriches Portolan hits produced from Leit results.
+/// Enriches [`PortolanHit`] values produced from Leit results.
+///
+/// [`LeitSource`] constructs a minimal hit first, then gives enrichers a chance
+/// to attach affordances or evidence before emitting it.
 pub trait HitEnricher<S: SubjectRef, A = portolan_core::StandardAffordance, E = ()> {
     /// Mutate a Portolan hit after the underlying Leit search returns it.
     fn enrich_hit(&self, doc_id: u32, hit: &mut PortolanHit<S, A, E>);
@@ -97,7 +116,10 @@ where
     }
 }
 
-/// Builds optional evidence records for catalog-backed hits.
+/// Builds optional [`Evidence`] records for catalog-backed hits.
+///
+/// [`CatalogHitEnricher`] uses this trait to decide what evidence, if any,
+/// should be attached when one catalog projection becomes a hit.
 pub trait ProjectionEvidenceBuilder<S: SubjectRef, A, M, E> {
     /// Build one evidence record for a projected hit.
     fn build_evidence(
@@ -125,6 +147,10 @@ where
 ///
 /// This is a convenience heuristic for projection-backed hits. It does not
 /// claim to identify the exact field that the retrieval backend matched.
+///
+/// Callers usually obtain this through
+/// [`CatalogHitEnricher::with_first_field_evidence`] rather than constructing
+/// it directly.
 #[derive(Clone, Debug)]
 pub struct FirstFieldEvidence<E> {
     kind: E,
@@ -155,6 +181,8 @@ where
 }
 
 /// Evidence builder that leaves catalog-backed hits unchanged.
+///
+/// [`CatalogHitEnricher::new`] starts with this builder by default.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoopProjectionEvidence;
 
@@ -168,7 +196,11 @@ impl<S: SubjectRef, A, M, E> ProjectionEvidenceBuilder<S, A, M, E> for NoopProje
     }
 }
 
-/// Hit enricher backed by a projection catalog.
+/// Hit enricher backed by a [`ProjectionCatalog`].
+///
+/// This is the main catalog-aware enrichment helper for [`LeitSource`]. Callers
+/// usually construct it with [`CatalogHitEnricher::new`] and then optionally
+/// add evidence behavior.
 #[derive(Clone, Copy, Debug)]
 pub struct CatalogHitEnricher<
     'a,
@@ -183,6 +215,9 @@ pub struct CatalogHitEnricher<
 
 impl<'a, S: SubjectRef, A, M> CatalogHitEnricher<'a, S, A, M, NoopProjectionEvidence> {
     /// Create a hit enricher over one projection catalog.
+    ///
+    /// This is the usual starting point when the Leit index was materialized
+    /// from a [`ProjectionCatalog`].
     pub const fn new(catalog: &'a ProjectionCatalog<S, A, M>) -> Self {
         Self {
             catalog,
@@ -204,6 +239,9 @@ impl<'a, S: SubjectRef, A, M> CatalogHitEnricher<'a, S, A, M, NoopProjectionEvid
 
 impl<'a, S: SubjectRef, A, M, EvidenceBuilder> CatalogHitEnricher<'a, S, A, M, EvidenceBuilder> {
     /// Replace the evidence builder for catalog-backed hits.
+    ///
+    /// Use this when the host wants a custom evidence attachment policy rather
+    /// than the default no-op or first-field helper.
     pub fn with_evidence_builder<NewEvidenceBuilder>(
         self,
         evidence_builder: NewEvidenceBuilder,
@@ -233,6 +271,8 @@ where
 }
 
 /// Default hit enricher that leaves hits unchanged.
+///
+/// [`LeitSource::new`] starts with this enricher by default.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoopHitEnricher;
 
@@ -241,6 +281,11 @@ impl<S: SubjectRef, A, E> HitEnricher<S, A, E> for NoopHitEnricher {
 }
 
 /// Leit-backed source over one in-memory index.
+///
+/// This is the main Portolan adapter for Leit-backed materialized retrieval.
+/// Callers usually build one with [`LeitSource::new`], then optionally replace
+/// the lowerer or enricher before using it as a [`RetrievalSource`] or staged
+/// source.
 #[derive(Debug)]
 pub struct LeitSource<'a, Mapper, Lowerer = TextQueryLowerer, Enricher = NoopHitEnricher> {
     index: &'a InMemoryIndex,
@@ -253,6 +298,9 @@ pub struct LeitSource<'a, Mapper, Lowerer = TextQueryLowerer, Enricher = NoopHit
 
 impl<'a, Mapper> LeitSource<'a, Mapper, TextQueryLowerer, NoopHitEnricher> {
     /// Create a new Leit-backed source with the default textual lowerer.
+    ///
+    /// This is the usual constructor for materialized Portolan retrieval over
+    /// a Leit [`InMemoryIndex`].
     pub fn new(index: &'a InMemoryIndex, mapper: Mapper, scorer: SearchScorer) -> Self {
         Self {
             index,
@@ -267,6 +315,9 @@ impl<'a, Mapper> LeitSource<'a, Mapper, TextQueryLowerer, NoopHitEnricher> {
 
 impl<'a, Mapper, Lowerer, Enricher> LeitSource<'a, Mapper, Lowerer, Enricher> {
     /// Replace the query lowerer.
+    ///
+    /// Use this when the host wants a custom lowering strategy from
+    /// [`PortolanQuery`] into Leit's textual search input.
     pub fn with_lowerer<NewLowerer>(
         self,
         lowerer: NewLowerer,
@@ -282,6 +333,9 @@ impl<'a, Mapper, Lowerer, Enricher> LeitSource<'a, Mapper, Lowerer, Enricher> {
     }
 
     /// Replace the hit enricher.
+    ///
+    /// Use this when the host wants to attach affordances or evidence before
+    /// hits leave the Leit adapter.
     pub fn with_enricher<NewEnricher>(
         self,
         enricher: NewEnricher,

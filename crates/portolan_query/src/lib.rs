@@ -8,6 +8,9 @@
 //! - optional scope
 //! - optional filters
 //! - a parsed envelope that hosts may lower further
+//!
+//! Callers usually construct a [`PortolanQuery`] first, then pass it into a
+//! retrieval source or router method.
 
 #![no_std]
 
@@ -20,6 +23,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 /// A host-extensible structured query envelope.
+///
+/// This is the main query value Portolan callers construct before retrieval.
+/// Sources and routers typically receive a borrowed [`PortolanQuery`] and then
+/// inspect its [`Self::parsed`] field or lower it further into backend-specific
+/// search input.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PortolanQuery<Scope = (), Filter = ()> {
     /// User-provided raw text.
@@ -30,6 +38,9 @@ pub struct PortolanQuery<Scope = (), Filter = ()> {
 
 impl<Scope, Filter> PortolanQuery<Scope, Filter> {
     /// Create a new query from raw text and a parsed form.
+    ///
+    /// Use this when the host already has a parsed query shape and wants to
+    /// preserve the original raw input alongside it.
     pub fn new(raw: impl Into<String>, parsed: ParsedQuery<Scope, Filter>) -> Self {
         Self {
             raw: raw.into(),
@@ -38,6 +49,9 @@ impl<Scope, Filter> PortolanQuery<Scope, Filter> {
     }
 
     /// Create a plain text query.
+    ///
+    /// This is the usual constructor for the first retrieval slices and simple
+    /// surfaces such as command palettes.
     pub fn text(text: impl Into<String>) -> Self
     where
         Scope: Default,
@@ -48,12 +62,18 @@ impl<Scope, Filter> PortolanQuery<Scope, Filter> {
     }
 
     /// Create a scoped query.
+    ///
+    /// Use this when the host wants to preserve an explicit scope token and
+    /// still expose text to lower-level sources.
     pub fn scoped(scope: Scope, text: impl Into<String>) -> Self {
         let text = text.into();
         Self::new(text.clone(), ParsedQuery::Scoped { scope, text })
     }
 
     /// Create a structured query with filters.
+    ///
+    /// This is the narrow structured form used when the host already has
+    /// filter tokens to carry alongside free text.
     pub fn structured(filters: Vec<Filter>, text: impl Into<String>) -> Self {
         let text = text.into();
         Self::new(text.clone(), ParsedQuery::Structured { filters, text })
@@ -61,6 +81,10 @@ impl<Scope, Filter> PortolanQuery<Scope, Filter> {
 }
 
 /// A minimal parsed query shape.
+///
+/// Hosts usually encounter this enum through [`PortolanQuery::parsed`]. More
+/// advanced adapters can lower the variants further into backend-specific query
+/// representations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ParsedQuery<Scope = (), Filter = ()> {
     /// Unstructured text query.
