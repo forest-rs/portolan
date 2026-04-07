@@ -485,46 +485,52 @@ impl<'a> CommandPalette<'a> {
 
     fn subject_text(&self, subject: &PaletteSubject, context: &PaletteContext) -> (String, String) {
         match subject {
-            PaletteSubject::Command(_) => {
-                let projection = self.command_projection(subject);
-                (
-                    projection.metadata.title.to_owned(),
-                    format!(
-                        "{} [{}]",
-                        projection.metadata.subtitle, projection.metadata.category
-                    ),
-                )
-            }
-            PaletteSubject::Object(id) => {
-                let object = context
-                    .visible_view
-                    .as_ref()
-                    .and_then(|view| view.objects.iter().find(|object| object.id == *id))
-                    .expect("palette object should exist in the visible view");
-                (object.label.to_owned(), object.subtitle.to_owned())
-            }
-            PaletteSubject::Recent(id) => {
-                let entry = context
-                    .recent
-                    .as_ref()
-                    .and_then(|recent| recent.entries.iter().find(|entry| entry.id == *id))
-                    .expect("recent palette entry should exist in history");
-                (entry.title.to_owned(), entry.subtitle.to_owned())
-            }
+            PaletteSubject::Command(_) => self.command_projection(subject).map_or_else(
+                || self.stale_subject_text(subject),
+                |projection| {
+                    (
+                        projection.metadata.title.to_owned(),
+                        format!(
+                            "{} [{}]",
+                            projection.metadata.subtitle, projection.metadata.category
+                        ),
+                    )
+                },
+            ),
+            PaletteSubject::Object(id) => context
+                .visible_view
+                .as_ref()
+                .and_then(|view| view.objects.iter().find(|object| object.id == *id))
+                .map(|object| (object.label.to_owned(), object.subtitle.to_owned()))
+                .unwrap_or_else(|| self.stale_subject_text(subject)),
+            PaletteSubject::Recent(id) => context
+                .recent
+                .as_ref()
+                .and_then(|recent| recent.entries.iter().find(|entry| entry.id == *id))
+                .map(|entry| (entry.title.to_owned(), entry.subtitle.to_owned()))
+                .unwrap_or_else(|| self.stale_subject_text(subject)),
         }
     }
 
     fn command_projection(
         &self,
         subject: &PaletteSubject,
-    ) -> &SubjectProjection<PaletteSubject, StandardAffordance, CommandMetadata> {
-        let doc_id = self
-            .catalog
-            .doc_id_for_subject(subject)
-            .expect("command subject should have a projection");
-        self.catalog
-            .projection(doc_id)
-            .expect("catalog should retain the command projection")
+    ) -> Option<&SubjectProjection<PaletteSubject, StandardAffordance, CommandMetadata>> {
+        let doc_id = self.catalog.doc_id_for_subject(subject)?;
+        self.catalog.projection(doc_id)
+    }
+
+    fn stale_subject_text(&self, subject: &PaletteSubject) -> (String, String) {
+        let (kind, id) = match subject {
+            PaletteSubject::Command(id) => ("Command", *id),
+            PaletteSubject::Object(id) => ("Object", *id),
+            PaletteSubject::Recent(id) => ("Recent", *id),
+        };
+
+        (
+            format!("[stale] {kind}"),
+            format!("subject {id} is no longer available in host state"),
+        )
     }
 }
 
@@ -734,5 +740,99 @@ fn main() {
                 evidence.kind
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_palette() -> CommandPalette<'static> {
+        let catalog = Box::leak(Box::new(ProjectionCatalog::new()));
+        let sources: [LabeledPaletteSource<'static>; 3] = [
+            ("palette.commands", &NoopSource),
+            ("palette.recent", &NoopSource),
+            ("palette.visible_objects", &NoopSource),
+        ];
+
+        CommandPalette::new(sources, catalog)
+    }
+
+    struct NoopSource;
+
+    impl
+        RetrievalSource<
+            PaletteSubject,
+            (),
+            (),
+            (),
+            (),
+            PaletteView,
+            PaletteRecent,
+            StandardAffordance,
+            PaletteEvidence,
+        > for NoopSource
+    {
+        fn retrieve_into(
+            &self,
+            _query: &PortolanQuery,
+            _context: &PaletteContext,
+            _budget: RetrievalBudget,
+            _out: &mut dyn CandidateSink<PaletteSubject, StandardAffordance, PaletteEvidence>,
+        ) {
+        }
+    }
+
+    impl
+        StagedRetrievalSource<
+            PaletteSubject,
+            (),
+            (),
+            (),
+            (),
+            PaletteView,
+            PaletteRecent,
+            StandardAffordance,
+            PaletteEvidence,
+        > for NoopSource
+    {
+        fn stage(&self) -> RouteStage {
+            RouteStage::Materialized
+        }
+    }
+
+    #[test]
+    fn renders_stale_subjects_without_panicking() {
+        let palette = empty_palette();
+        let context = PaletteContext {
+            selection: None,
+            focus: None,
+            visible_view: Some(PaletteView {
+                objects: Vec::new(),
+            }),
+            recent: Some(PaletteRecent {
+                entries: Vec::new(),
+            }),
+        };
+
+        let command = palette.subject_text(&PaletteSubject::Command("command.missing"), &context);
+        let object = palette.subject_text(&PaletteSubject::Object("object.missing"), &context);
+        let recent = palette.subject_text(&PaletteSubject::Recent("recent.missing"), &context);
+
+        assert_eq!(command.0, "[stale] Command");
+        assert_eq!(
+            command.1,
+            "subject command.missing is no longer available in host state"
+        );
+        assert_eq!(object.0, "[stale] Object");
+        assert_eq!(
+            object.1,
+            "subject object.missing is no longer available in host state"
+        );
+        assert_eq!(recent.0, "[stale] Recent");
+        assert_eq!(
+            recent.1,
+            "subject recent.missing is no longer available in host state"
+        );
     }
 }
