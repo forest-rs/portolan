@@ -20,6 +20,18 @@ small public surface.
 Portolan owns typed, actionable, explainable retrieval over live system state.
 It does not own the retrieval kernel, canonical world state, or UI rendering.
 
+## Getting Started
+
+If you want the main Portolan path, start with the `portolan` facade crate.
+It re-exports the common workflow types and keeps heavier integration layers
+under explicit modules and features.
+
+If you want to see the current shape end to end, start with:
+
+- `examples/command_palette`: the clearest host-facing example
+- `examples/basic_routing`: the smallest routed retrieval example
+- `examples/virtual_workset`: materialized plus virtual retrieval in one pass
+
 ## `no_std` and `alloc`
 
 The calm core is designed to work in `no_std` environments. The initial library
@@ -69,7 +81,9 @@ The intended family is broader than the first slice:
 
 ## Current status
 
-This workspace now exercises the core seams end to end: host projections can be
+This repository is ready to be public as an early, architecture-first Portolan
+implementation. The crate graph is real, the examples are coherent, and the
+workspace exercises the main seams end to end: host projections can be
 materialized into Leit, routed alongside contextual or virtual sources, and
 returned as typed hits with provenance and affordances.
 
@@ -86,6 +100,10 @@ view, or recents when those concepts are not all independently meaningful.
 
 The new `portolan` crate is the preferred way into the workspace when you want
 the main retrieval path without importing several `portolan_*` crates directly.
+
+The API should still be considered experimental. It is coherent enough for
+public review and early adopters, but not yet stable enough to promise long-run
+compatibility.
 
 ## Verification
 

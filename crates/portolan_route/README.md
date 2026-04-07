@@ -6,6 +6,10 @@ This crate owns simple orchestration over object-safe Portolan retrieval
 sources. It executes sources in explicit stages so Portolan can stay budgeted
 and incremental without forcing async into the first slice.
 
+This is the main entry point once a host has more than one retrieval source.
+Most surfaces should feel like “query plus context plus staged sources in,
+typed hits plus trace out.”
+
 Route policy stays explicit. Callers choose whether to exhaust the full plan,
 stop early after enough retained hits, and reconcile same-subject hits across
 sources by retaining all of them, keeping the first, or keeping the best score.

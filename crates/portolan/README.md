@@ -5,6 +5,10 @@ Curated facade crate for Portolan structured retrieval.
 This crate is the preferred way into the Portolan workspace when you want the
 main retrieval workflow without importing several `portolan_*` crates directly.
 
+Most callers should start here. If you later need narrower dependencies or more
+explicit ownership boundaries, you can drop down into the lower-level
+`portolan_*` crates.
+
 Top-level exports cover the common retrieval path:
 
 - hits, evidence, affordances, budgets, and context
