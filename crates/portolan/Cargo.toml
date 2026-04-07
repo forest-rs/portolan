@@ -30,13 +30,13 @@ leit = ["dep:portolan_leit", "schema"]
 
 [dependencies]
 portolan_core = { workspace = true }
+portolan_ingest = { optional = true, workspace = true }
+portolan_leit = { optional = true, workspace = true }
 portolan_observe = { workspace = true }
 portolan_query = { workspace = true }
 portolan_route = { workspace = true }
+portolan_schema = { optional = true, workspace = true }
 portolan_source = { workspace = true }
-portolan_schema = { workspace = true, optional = true }
-portolan_ingest = { workspace = true, optional = true }
-portolan_leit = { workspace = true, optional = true }
 
 [lints]
 workspace = true

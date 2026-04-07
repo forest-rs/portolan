@@ -12,10 +12,10 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-leit_core = { workspace = true, features = ["std"] }
-leit_index = { workspace = true, features = ["std"] }
-leit_text = { workspace = true, features = ["std"] }
-portolan = { workspace = true, features = ["std", "ingest", "leit"] }
+leit_core = { features = ["std"], workspace = true }
+leit_index = { features = ["std"], workspace = true }
+leit_text = { features = ["std"], workspace = true }
+portolan = { features = ["ingest", "leit", "std"], workspace = true }
 
 [lints]
 workspace = true
