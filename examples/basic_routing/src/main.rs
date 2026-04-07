@@ -7,9 +7,10 @@ use leit_core::FieldId;
 use leit_index::{InMemoryIndex, InMemoryIndexBuilder, SearchScorer};
 use leit_text::{Analyzer, FieldAnalyzers, UnicodeNormalizer, WhitespaceTokenizer};
 use portolan_core::{
-    Affordance, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin, StandardAffordance,
+    Affordance, Evidence, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin,
+    StandardAffordance,
 };
-use portolan_leit::LeitSource;
+use portolan_leit::{LeitSource, TextQueryLowerer};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
 use portolan_schema::{MaterializedField, ProjectSubject, SubjectProjection};
@@ -28,10 +29,25 @@ struct CommandRecord {
     description: &'static str,
 }
 
+#[derive(Clone, Debug)]
+struct CommandMetadata {
+    title: &'static str,
+}
+
+type DemoHit = PortolanHit<DemoSubject, StandardAffordance, &'static str>;
+type SubjectMapper = Box<dyn Fn(u32) -> Option<DemoSubject>>;
+type HitEnricher = Box<dyn Fn(u32, &mut DemoHit)>;
+type DemoLeitSource<'a> = LeitSource<'a, SubjectMapper, TextQueryLowerer, HitEnricher>;
+
 struct CommandProjector;
 
-impl ProjectSubject<CommandRecord, DemoSubject> for CommandProjector {
-    fn project(&self, value: &CommandRecord) -> SubjectProjection<DemoSubject> {
+impl ProjectSubject<CommandRecord, DemoSubject, StandardAffordance, CommandMetadata>
+    for CommandProjector
+{
+    fn project(
+        &self,
+        value: &CommandRecord,
+    ) -> SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata> {
         SubjectProjection::new(
             DemoSubject::Command(value.id),
             vec![
@@ -40,27 +56,30 @@ impl ProjectSubject<CommandRecord, DemoSubject> for CommandProjector {
             ],
         )
         .with_affordances(vec![Affordance::new(StandardAffordance::Execute)])
+        .with_metadata(CommandMetadata { title: value.title })
     }
 }
 
 #[derive(Default)]
-struct VecSink(Vec<PortolanHit<DemoSubject>>);
+struct VecSink(Vec<DemoHit>);
 
-impl CandidateSink<DemoSubject> for VecSink {
-    fn push(&mut self, hit: PortolanHit<DemoSubject>) {
+impl CandidateSink<DemoSubject, StandardAffordance, &'static str> for VecSink {
+    fn push(&mut self, hit: DemoHit) {
         self.0.push(hit);
     }
 }
 
 struct ContextSource;
 
-impl RetrievalSource<DemoSubject> for ContextSource {
+impl RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+    for ContextSource
+{
     fn retrieve_into(
         &self,
         query: &PortolanQuery,
         _context: &RetrievalContext,
         _budget: RetrievalBudget,
-        out: &mut dyn CandidateSink<DemoSubject>,
+        out: &mut dyn CandidateSink<DemoSubject, StandardAffordance, &'static str>,
     ) {
         let should_match = match &query.parsed {
             ParsedQuery::Text { text }
@@ -80,35 +99,41 @@ impl RetrievalSource<DemoSubject> for ContextSource {
     }
 }
 
-impl StagedRetrievalSource<DemoSubject> for ContextSource {
+impl StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+    for ContextSource
+{
     fn stage(&self) -> RouteStage {
         RouteStage::Contextual
     }
 }
 
 struct MaterializedSource<'a> {
-    inner: LeitSource<'a, Box<dyn Fn(u32) -> Option<DemoSubject>>>,
+    inner: DemoLeitSource<'a>,
 }
 
 impl<'a> MaterializedSource<'a> {
-    fn new(inner: LeitSource<'a, Box<dyn Fn(u32) -> Option<DemoSubject>>>) -> Self {
+    fn new(inner: DemoLeitSource<'a>) -> Self {
         Self { inner }
     }
 }
 
-impl RetrievalSource<DemoSubject> for MaterializedSource<'_> {
+impl RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+    for MaterializedSource<'_>
+{
     fn retrieve_into(
         &self,
         query: &PortolanQuery,
         context: &RetrievalContext,
         budget: RetrievalBudget,
-        out: &mut dyn CandidateSink<DemoSubject>,
+        out: &mut dyn CandidateSink<DemoSubject, StandardAffordance, &'static str>,
     ) {
         self.inner.retrieve_into(query, context, budget, out);
     }
 }
 
-impl StagedRetrievalSource<DemoSubject> for MaterializedSource<'_> {
+impl StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+    for MaterializedSource<'_>
+{
     fn stage(&self) -> RouteStage {
         RouteStage::Materialized
     }
@@ -138,6 +163,19 @@ fn origin_label(origin: RetrievalOrigin) -> &'static str {
     }
 }
 
+fn affordance_label(affordance: StandardAffordance) -> &'static str {
+    match affordance {
+        StandardAffordance::Execute => "execute",
+        StandardAffordance::Open => "open",
+        StandardAffordance::Focus => "focus",
+        StandardAffordance::Inspect => "inspect",
+        StandardAffordance::Reveal => "reveal",
+        StandardAffordance::Toggle => "toggle",
+        StandardAffordance::Preview => "preview",
+        StandardAffordance::RefineQuery => "refine_query",
+    }
+}
+
 fn analyzers() -> FieldAnalyzers {
     let mut analyzers = FieldAnalyzers::new();
     let analyzer =
@@ -149,7 +187,9 @@ fn analyzers() -> FieldAnalyzers {
     analyzers
 }
 
-fn build_index(projections: &[SubjectProjection<DemoSubject>]) -> InMemoryIndex {
+fn build_index(
+    projections: &[SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>],
+) -> InMemoryIndex {
     let mut builder = InMemoryIndexBuilder::new(analyzers());
     builder.register_field_alias(FieldId::new(1), "title");
     builder.register_field_alias(FieldId::new(2), "description");
@@ -182,10 +222,11 @@ fn main() {
         },
     ];
     let projector = CommandProjector;
-    let projections: Vec<_> = records
-        .iter()
-        .map(|record| projector.project(record))
-        .collect();
+    let projections: Vec<SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>> =
+        records
+            .iter()
+            .map(|record| projector.project(record))
+            .collect();
 
     println!("Portolan basic routing example");
     println!();
@@ -195,7 +236,16 @@ fn main() {
         for field in &projection.materialized_fields {
             println!("     field {} => {}", field.field.as_u32(), field.text);
         }
-        println!("     affordances: {}", projection.affordances.len());
+        println!(
+            "     affordances: {}",
+            projection
+                .affordances
+                .iter()
+                .map(|affordance| affordance_label(affordance.action))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        println!("     metadata title: {}", projection.metadata.title);
     }
     println!();
 
@@ -204,14 +254,44 @@ fn main() {
         .iter()
         .map(|projection| projection.subject.clone())
         .collect();
-    let mapper = move |doc_id: u32| subjects.get((doc_id as usize).saturating_sub(1)).cloned();
-    let materialized = MaterializedSource::new(LeitSource::new(
-        &index,
-        Box::new(mapper),
-        SearchScorer::bm25(),
-    ));
+    let projected_affordances: Vec<_> = projections
+        .iter()
+        .map(|projection| projection.affordances.clone())
+        .collect();
+    let projected_titles: Vec<_> = projections
+        .iter()
+        .map(|projection| projection.metadata.title)
+        .collect();
+    let mapper: SubjectMapper =
+        Box::new(move |doc_id: u32| subjects.get((doc_id as usize).saturating_sub(1)).cloned());
+    let enricher: HitEnricher = Box::new(move |doc_id: u32, hit: &mut DemoHit| {
+        let index = (doc_id as usize).saturating_sub(1);
+        if let Some(affordances) = projected_affordances.get(index) {
+            hit.affordances = affordances.clone();
+        }
+        if projected_titles.get(index).is_some() {
+            hit.evidence.push(Evidence {
+                field: Some(FieldId::new(1)),
+                contribution: hit.score,
+                kind: "title_projection",
+            });
+        }
+    });
+    let materialized = MaterializedSource::new(
+        LeitSource::new(&index, mapper, SearchScorer::bm25()).with_enricher(enricher),
+    );
     let contextual = ContextSource;
-    let sources: [&dyn StagedRetrievalSource<DemoSubject>; 2] = [&materialized, &contextual];
+    let sources: [&dyn StagedRetrievalSource<
+        DemoSubject,
+        (),
+        (),
+        (),
+        (),
+        (),
+        (),
+        StandardAffordance,
+        &'static str,
+    >; 2] = [&materialized, &contextual];
     let router = RetrievalRouter::new();
     let plan = RoutePlan::standard();
     let query = PortolanQuery::new(
@@ -264,5 +344,25 @@ fn main() {
             hit.score.as_f32(),
             origin_label(hit.origin)
         );
+        if !hit.affordances.is_empty() {
+            println!(
+                "      affordances: {}",
+                hit.affordances
+                    .iter()
+                    .map(|affordance| affordance_label(affordance.action))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        if !hit.evidence.is_empty() {
+            for evidence in &hit.evidence {
+                println!(
+                    "      evidence: field={:?} contribution={:.3} kind={}",
+                    evidence.field.map(FieldId::as_u32),
+                    evidence.contribution.as_f32(),
+                    evidence.kind
+                );
+            }
+        }
     }
 }
