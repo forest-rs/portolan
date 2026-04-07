@@ -417,6 +417,7 @@ dependencies = [
  "leit_text",
  "portolan_core",
  "portolan_leit",
+ "portolan_observe",
  "portolan_query",
  "portolan_route",
  "portolan_source",
@@ -433,6 +434,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "portolan_observe"
+version = "0.1.0"
+dependencies = [
+ "portolan_core",
+]
+
+[[package]]
 name = "portolan_query"
 version = "0.1.0"
 dependencies = [
@@ -445,6 +453,7 @@ name = "portolan_route"
 version = "0.1.0"
 dependencies = [
  "portolan_core",
+ "portolan_observe",
  "portolan_query",
  "portolan_source",
 ]

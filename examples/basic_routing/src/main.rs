@@ -38,6 +38,8 @@ type DemoHit = PortolanHit<DemoSubject, StandardAffordance, &'static str>;
 type SubjectMapper = Box<dyn Fn(u32) -> Option<DemoSubject>>;
 type HitEnricher = Box<dyn Fn(u32, &mut DemoHit)>;
 type DemoLeitSource<'a> = LeitSource<'a, SubjectMapper, TextQueryLowerer, HitEnricher>;
+type DemoSourceRef<'a> = &'a dyn StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>;
+type LabeledDemoSource<'a> = (&'a str, DemoSourceRef<'a>);
 
 struct CommandProjector;
 
@@ -281,17 +283,10 @@ fn main() {
         LeitSource::new(&index, mapper, SearchScorer::bm25()).with_enricher(enricher),
     );
     let contextual = ContextSource;
-    let sources: [&dyn StagedRetrievalSource<
-        DemoSubject,
-        (),
-        (),
-        (),
-        (),
-        (),
-        (),
-        StandardAffordance,
-        &'static str,
-    >; 2] = [&materialized, &contextual];
+    let sources: [LabeledDemoSource<'_>; 2] = [
+        ("leit.materialized", &materialized),
+        ("context.recent", &contextual),
+    ];
     let router = RetrievalRouter::new();
     let plan = RoutePlan::standard();
     let query = PortolanQuery::new(
@@ -322,7 +317,7 @@ fn main() {
     );
     println!();
 
-    let stats = router.retrieve_into(
+    let trace = router.retrieve_traced(
         plan,
         &sources,
         &query,
@@ -334,8 +329,16 @@ fn main() {
     println!("4. Results");
     println!(
         "   visited {} stages across {} sources",
-        stats.stages_visited, stats.sources_visited
+        trace.stages_visited, trace.sources_visited
     );
+    println!("   trace:");
+    for visit in &trace.visits {
+        println!(
+            "     - stage={} source={}",
+            stage_label(visit.stage),
+            visit.source
+        );
+    }
     for (index, hit) in sink.0.iter().enumerate() {
         println!(
             "   {}. {} | score={:.3} | origin={}",

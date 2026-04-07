@@ -1,5 +1,5 @@
 [package]
-name = "portolan_route"
+name = "portolan_observe"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,25 +7,17 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Staged multi-source routing for Portolan retrieval"
+description = "Retrieval trace records and observation helpers for Portolan"
 readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
 [features]
 default = ["std"]
-std = [
-    "portolan_core/std",
-    "portolan_observe/std",
-    "portolan_query/std",
-    "portolan_source/std",
-]
+std = ["portolan_core/std"]
 
 [dependencies]
 portolan_core = { workspace = true }
-portolan_observe = { workspace = true }
-portolan_query = { workspace = true }
-portolan_source = { workspace = true }
 
 [lints]
 workspace = true

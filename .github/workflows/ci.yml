@@ -14,6 +14,7 @@ env:
   RUST_MIN_VER_PKGS: >-
     -p portolan_core
     -p portolan_leit
+    -p portolan_observe
     -p portolan_query
     -p portolan_route
     -p portolan_source

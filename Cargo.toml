@@ -3,6 +3,7 @@ members = [
     "crates/portolan_core",
     "crates/portolan_integration_tests",
     "crates/portolan_leit",
+    "crates/portolan_observe",
     "crates/portolan_query",
     "crates/portolan_route",
     "crates/portolan_schema",
@@ -27,6 +28,7 @@ categories = ["data-structures", "development-tools"]
 portolan_core = { default-features = false, path = "crates/portolan_core" }
 portolan_integration_tests = { path = "crates/portolan_integration_tests" }
 portolan_leit = { default-features = false, path = "crates/portolan_leit" }
+portolan_observe = { default-features = false, path = "crates/portolan_observe" }
 portolan_query = { default-features = false, path = "crates/portolan_query" }
 portolan_route = { default-features = false, path = "crates/portolan_route" }
 portolan_schema = { default-features = false, path = "crates/portolan_schema" }

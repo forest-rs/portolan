@@ -46,6 +46,9 @@ canonical world state, or host action execution.
   - Owns the first retrieval seam: sources push candidates into sinks under an
     explicit context and budget.
   - Explicitly does not own async runtimes, fusion policy, or materialization.
+- `portolan_observe`
+  - Owns generic trace records for retrieval execution and later diagnostics.
+  - Explicitly does not own routing policy or source execution.
 - `portolan_schema`
   - Owns host projection records and the materialized field contract used by
     ingest or index-building layers.
@@ -65,8 +68,6 @@ canonical world state, or host action execution.
   - Incremental updates and materialization workflows.
 - `portolan_filter`
   - Structured filters and faceting above the small query envelope.
-- `portolan_observe`
-  - Trace capture, explainability exports, and diagnostics.
 
 ## Dependency rules
 
@@ -74,7 +75,8 @@ canonical world state, or host action execution.
 - `portolan_schema` depends on `portolan_core` and `leit_core`.
 - `portolan_query` depends only on `portolan_core`.
 - `portolan_source` depends on `portolan_core` and `portolan_query`.
-- `portolan_route` depends on `portolan_core`, `portolan_query`, and `portolan_source`.
+- `portolan_observe` depends on `portolan_core`.
+- `portolan_route` depends on `portolan_core`, `portolan_observe`, `portolan_query`, and `portolan_source`.
 - Adapter crates such as `portolan_leit` depend inward on Portolan core crates
   and outward on `leit_*`.
 - Core crates must not depend on UI, async runtimes, or host application code.

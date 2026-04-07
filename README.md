@@ -36,6 +36,7 @@ Its tests run under `std`.
 
 - `portolan_core`: typed hits, affordances, provenance, budgets, and resolver seams
 - `portolan_leit`: adapters that lower Portolan retrieval into `leit_*`
+- `portolan_observe`: retrieval trace records and observation helpers
 - `portolan_query`: small, host-extensible query model
 - `portolan_route`: staged, multi-source retrieval orchestration
 - `portolan_schema`: subject projection records and materialized field contracts
@@ -56,7 +57,6 @@ The intended family is broader than the first slice:
 - `portolan_schema`: subject and field projection contracts
 - `portolan_ingest`: incremental projection and materialization workflows
 - `portolan_filter`: structured filters, facets, and metadata constraints
-- `portolan_observe`: retrieval traces, diagnostics, and explainability surfaces
 
 ## Current status
 

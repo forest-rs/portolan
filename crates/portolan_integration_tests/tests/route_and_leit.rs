@@ -141,7 +141,8 @@ fn routes_materialized_sources_before_contextual_sources() {
         }),
     );
     let context = ContextSource;
-    let sources: [&dyn StagedRetrievalSource<DemoSubject>; 2] = [&leit, &context];
+    let sources: [(&str, &dyn StagedRetrievalSource<DemoSubject>); 2] =
+        [("leit.materialized", &leit), ("context.recent", &context)];
     let query = PortolanQuery::new(
         "open",
         ParsedQuery::<(), ()>::Text {
@@ -151,7 +152,7 @@ fn routes_materialized_sources_before_contextual_sources() {
     let router = RetrievalRouter::new();
     let mut sink = VecSink::default();
 
-    let stats = router.retrieve_into(
+    let trace = router.retrieve_traced(
         RoutePlan::standard(),
         &sources,
         &query,
@@ -160,8 +161,11 @@ fn routes_materialized_sources_before_contextual_sources() {
         &mut sink,
     );
 
-    assert_eq!(stats.sources_visited, 2);
-    assert_eq!(stats.stages_visited, 2);
+    assert_eq!(trace.sources_visited, 2);
+    assert_eq!(trace.stages_visited, 2);
+    assert_eq!(trace.visits.len(), 2);
+    assert_eq!(trace.visits[0].source, "leit.materialized");
+    assert_eq!(trace.visits[1].source, "context.recent");
     assert_eq!(sink.0.len(), 2);
     assert_eq!(sink.0[0].subject, DemoSubject("command.open_scene"));
     assert_eq!(sink.0[0].origin, RetrievalOrigin::Derived);

@@ -17,6 +17,7 @@ leit_index = { features = ["std"], workspace = true }
 leit_text = { features = ["std"], workspace = true }
 portolan_core = { features = ["std"], workspace = true }
 portolan_leit = { features = ["std"], workspace = true }
+portolan_observe = { features = ["std"], workspace = true }
 portolan_query = { features = ["std"], workspace = true }
 portolan_route = { features = ["std"], workspace = true }
 portolan_source = { features = ["std"], workspace = true }
