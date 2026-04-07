@@ -380,4 +380,35 @@ mod tests {
         assert_eq!(hit.evidence[0].contribution, Score::new(1.5));
         assert_eq!(hit.evidence[0].kind, "projection");
     }
+
+    #[test]
+    fn first_field_evidence_uses_projection_order() {
+        let catalog: ProjectionCatalog<DemoSubject, StandardAffordance> =
+            ProjectionCatalog::from_projections([SubjectProjection::new(
+                DemoSubject("command.open"),
+                vec![
+                    MaterializedField::new(FieldId::new(7), "Commands"),
+                    MaterializedField::new(FieldId::new(3), "Open"),
+                ],
+            )])
+            .expect("catalog should reject duplicate subjects");
+
+        let mapper = CatalogSubjectMapper::new(&catalog);
+        let mut hit = PortolanHit::new(
+            mapper
+                .map_subject(1)
+                .expect("projection catalog should map subject"),
+            Score::new(0.75),
+            RetrievalOrigin::MaterializedIndex,
+        );
+
+        CatalogHitEnricher::new(&catalog)
+            .with_first_field_evidence("projection")
+            .enrich_hit(1, &mut hit);
+
+        assert_eq!(hit.evidence.len(), 1);
+        assert_eq!(hit.evidence[0].field, Some(FieldId::new(7)));
+        assert_eq!(hit.evidence[0].contribution, Score::new(0.75));
+        assert_eq!(hit.evidence[0].kind, "projection");
+    }
 }
