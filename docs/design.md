@@ -101,6 +101,8 @@ The first implementation slice should prove four things:
 
 - If the common query model grows too early, Portolan will become
   application-shaped.
+- If helper evidence is mistaken for true backend match provenance, Portolan
+  will overclaim explainability before the lower layers can actually support it.
 - If affordances collapse into opaque strings, actionability becomes weak.
 - If async is forced into the first trait boundary, the calm core becomes heavy.
 - If Portolan redefines too much of Leit's retrieval vocabulary, the layering

@@ -122,6 +122,9 @@ where
 }
 
 /// Evidence builder that reports the first projected materialized field.
+///
+/// This is a convenience heuristic for projection-backed hits. It does not
+/// claim to identify the exact field that the retrieval backend matched.
 #[derive(Clone, Debug)]
 pub struct FirstFieldEvidence<E> {
     kind: E,
@@ -187,7 +190,10 @@ impl<'a, S: SubjectRef, A, M> CatalogHitEnricher<'a, S, A, M, NoopProjectionEvid
         }
     }
 
-    /// Attach evidence based on the first materialized field in each projection.
+    /// Attach heuristic evidence based on the first materialized field.
+    ///
+    /// This is useful for examples and projection-backed adapters, but it is
+    /// not exact backend match provenance.
     pub fn with_first_field_evidence<E: Clone>(
         self,
         kind: E,

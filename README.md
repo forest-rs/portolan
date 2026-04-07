@@ -63,9 +63,12 @@ The intended family is broader than the first slice:
 
 ## Current status
 
-This workspace now proves the core seams end to end: host projections can be
+This workspace now exercises the core seams end to end: host projections can be
 materialized into Leit, routed alongside contextual or virtual sources, and
 returned as typed hits with provenance and affordances.
+
+The current examples and helpers demonstrate the shape of explainability, but
+they do not yet guarantee backend-truth provenance for every evidence record.
 
 ## Migration Notes
 
