@@ -16,7 +16,9 @@ use portolan_core::{
 use portolan_ingest::{FieldAlias, build_leit_index};
 use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
 use portolan_query::{ParsedQuery, PortolanQuery};
-use portolan_route::{RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource};
+use portolan_route::{
+    DuplicatePolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource,
+};
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
 use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
@@ -432,6 +434,7 @@ impl<'a> CommandPalette<'a> {
             policy: RoutePolicy {
                 stop_after_stage_hits: None,
                 stop_after_total_hits: Some(3),
+                duplicate_policy: DuplicatePolicy::KeepFirstBySubject,
             },
             sources,
             catalog,
@@ -670,6 +673,7 @@ fn main() {
         stage_label(RoutePlan::standard().stages()[2])
     );
     println!("   stop policy: stop after 3 total hits");
+    println!("   duplicate policy: keep first hit per subject");
     println!();
 
     let response = palette.search("camera", &context);
@@ -690,10 +694,17 @@ fn main() {
     println!("   stage summary:");
     for stage in &response.trace.stages {
         println!(
-            "     - stage={} sources={} hits={}",
+            "     - stage={} sources={} hits={} duplicates_suppressed={}",
             stage_label(stage.stage),
             stage.sources_visited,
-            stage.hits_emitted
+            stage.hits_emitted,
+            stage.duplicates_suppressed
+        );
+    }
+    if response.trace.duplicates_suppressed > 0 {
+        println!(
+            "   duplicates suppressed: {}",
+            response.trace.duplicates_suppressed
         );
     }
     if let Some(stop_reason) = &response.trace.stop_reason {

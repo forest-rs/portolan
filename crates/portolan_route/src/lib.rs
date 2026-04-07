@@ -7,7 +7,7 @@
 //! - sources declare a stage
 //! - a route plan picks stage order
 //! - the router executes sources stage by stage into a caller sink
-//! - optional stop policy keeps the work budgeted and explicit
+//! - optional stop and dedup policies keep the work budgeted and explicit
 
 #![no_std]
 
@@ -41,8 +41,20 @@ pub struct RouteStats {
     pub stages_visited: u32,
     /// Number of emitted hits.
     pub hits_emitted: u32,
+    /// Number of duplicate hits suppressed before reaching the caller sink.
+    pub duplicates_suppressed: u32,
     /// Reason retrieval stopped early, when applicable.
     pub stop_reason: Option<StopReason<RouteStage>>,
+}
+
+/// Policy controlling how routed retrieval handles repeated subjects.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DuplicatePolicy {
+    /// Retain every hit, even when multiple sources emit the same subject.
+    #[default]
+    RetainAll,
+    /// Keep the first hit for each subject and suppress later duplicates.
+    KeepFirstBySubject,
 }
 
 /// Explicit policy controlling when routing may stop before exhausting the plan.
@@ -52,6 +64,8 @@ pub struct RoutePolicy {
     pub stop_after_stage_hits: Option<u32>,
     /// Stop after total emitted hits reach at least this many hits.
     pub stop_after_total_hits: Option<u32>,
+    /// Policy for handling repeated subjects emitted by multiple sources.
+    pub duplicate_policy: DuplicatePolicy,
 }
 
 impl RoutePolicy {
@@ -60,6 +74,7 @@ impl RoutePolicy {
         Self {
             stop_after_stage_hits: None,
             stop_after_total_hits: None,
+            duplicate_policy: DuplicatePolicy::RetainAll,
         }
     }
 }
@@ -256,11 +271,13 @@ impl RetrievalRouter {
         mut trace: MaybeTraceState<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
     ) -> RouteStats {
         let mut stats = RouteStats::default();
+        let mut seen_subjects = alloc::vec::Vec::new();
 
         for stage in plan.stages() {
             let mut visited_this_stage = false;
             let mut stage_sources_visited = 0_u32;
             let stage_hit_base = stats.hits_emitted;
+            let stage_duplicate_base = stats.duplicates_suppressed;
             for (source_index, source) in sources.iter().enumerate() {
                 if source.stage() != *stage {
                     continue;
@@ -272,22 +289,34 @@ impl RetrievalRouter {
                 if let Some((trace, labeled_sources)) = &mut trace {
                     trace.record_visit(*stage, labeled_sources[source_index].0);
                 }
-                let mut counting_sink = CountingSink::new(out);
-                source.retrieve_into(query, context, budget, &mut counting_sink);
+                let mut routing_sink =
+                    RoutingSink::new(out, policy.duplicate_policy, &mut seen_subjects);
+                source.retrieve_into(query, context, budget, &mut routing_sink);
                 stats.hits_emitted = stats
                     .hits_emitted
-                    .checked_add(counting_sink.hits_emitted())
+                    .checked_add(routing_sink.hits_emitted())
                     .expect("route hit count overflow");
+                stats.duplicates_suppressed = stats
+                    .duplicates_suppressed
+                    .checked_add(routing_sink.duplicates_suppressed())
+                    .expect("route duplicate suppression count overflow");
             }
 
             if visited_this_stage {
                 let stage_hits_emitted = stats.hits_emitted - stage_hit_base;
+                let stage_duplicates_suppressed =
+                    stats.duplicates_suppressed - stage_duplicate_base;
                 stats.stages_visited = stats
                     .stages_visited
                     .checked_add(1)
                     .expect("route stage count overflow");
                 if let Some((trace, _)) = &mut trace {
-                    trace.record_stage(*stage, stage_sources_visited, stage_hits_emitted);
+                    trace.record_stage(
+                        *stage,
+                        stage_sources_visited,
+                        stage_hits_emitted,
+                        stage_duplicates_suppressed,
+                    );
                 }
 
                 if let Some(stop_reason) =
@@ -333,26 +362,54 @@ fn stop_reason_for_stage(
     None
 }
 
-struct CountingSink<'a, S: SubjectRef, A, E> {
+struct RoutingSink<'a, S: SubjectRef, A, E> {
     inner: &'a mut dyn CandidateSink<S, A, E>,
+    duplicate_policy: DuplicatePolicy,
+    seen_subjects: &'a mut alloc::vec::Vec<S>,
     hits_emitted: u32,
+    duplicates_suppressed: u32,
 }
 
-impl<'a, S: SubjectRef, A, E> CountingSink<'a, S, A, E> {
-    fn new(inner: &'a mut dyn CandidateSink<S, A, E>) -> Self {
+impl<'a, S: SubjectRef, A, E> RoutingSink<'a, S, A, E> {
+    fn new(
+        inner: &'a mut dyn CandidateSink<S, A, E>,
+        duplicate_policy: DuplicatePolicy,
+        seen_subjects: &'a mut alloc::vec::Vec<S>,
+    ) -> Self {
         Self {
             inner,
+            duplicate_policy,
+            seen_subjects,
             hits_emitted: 0,
+            duplicates_suppressed: 0,
         }
     }
 
     fn hits_emitted(&self) -> u32 {
         self.hits_emitted
     }
+
+    fn duplicates_suppressed(&self) -> u32 {
+        self.duplicates_suppressed
+    }
 }
 
-impl<S: SubjectRef, A, E> CandidateSink<S, A, E> for CountingSink<'_, S, A, E> {
+impl<S: SubjectRef, A, E> CandidateSink<S, A, E> for RoutingSink<'_, S, A, E> {
     fn push(&mut self, hit: portolan_core::PortolanHit<S, A, E>) {
+        if matches!(self.duplicate_policy, DuplicatePolicy::KeepFirstBySubject)
+            && self.seen_subjects.iter().any(|seen| seen == &hit.subject)
+        {
+            self.duplicates_suppressed = self
+                .duplicates_suppressed
+                .checked_add(1)
+                .expect("counting sink duplicate suppression overflow");
+            return;
+        }
+
+        if matches!(self.duplicate_policy, DuplicatePolicy::KeepFirstBySubject) {
+            self.seen_subjects.push(hit.subject.clone());
+        }
+
         self.hits_emitted = self
             .hits_emitted
             .checked_add(1)

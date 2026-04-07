@@ -12,7 +12,9 @@ use portolan_core::{
 };
 use portolan_leit::LeitSource;
 use portolan_query::PortolanQuery;
-use portolan_route::{RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource};
+use portolan_route::{
+    DuplicatePolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource,
+};
 use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -39,6 +41,32 @@ impl RetrievalSource<DemoSubject> for ContextSource {
 }
 
 impl StagedRetrievalSource<DemoSubject> for ContextSource {
+    fn stage(&self) -> RouteStage {
+        RouteStage::Contextual
+    }
+}
+
+struct DuplicateContextSource;
+
+impl RetrievalSource<DemoSubject> for DuplicateContextSource {
+    fn retrieve_into(
+        &self,
+        _query: &PortolanQuery,
+        _context: &RetrievalContext,
+        _budget: RetrievalBudget,
+        out: &mut dyn CandidateSink<DemoSubject>,
+    ) {
+        out.push(PortolanHit {
+            subject: DemoSubject("command.open_scene"),
+            score: Score::new(0.20),
+            evidence: Vec::new(),
+            affordances: vec![Affordance::new(StandardAffordance::Inspect)],
+            origin: RetrievalOrigin::ContextCache,
+        });
+    }
+}
+
+impl StagedRetrievalSource<DemoSubject> for DuplicateContextSource {
     fn stage(&self) -> RouteStage {
         RouteStage::Contextual
     }
@@ -198,6 +226,7 @@ fn stops_after_stage_hit_limit_before_later_stages() {
         RoutePolicy {
             stop_after_stage_hits: Some(1),
             stop_after_total_hits: None,
+            duplicate_policy: DuplicatePolicy::RetainAll,
         },
         &sources,
         &query,
@@ -225,4 +254,94 @@ fn stops_after_stage_hit_limit_before_later_stages() {
         sink.as_slice()[0].subject,
         DemoSubject("command.open_scene")
     );
+}
+
+#[test]
+fn deduplicates_subjects_across_stages_when_requested() {
+    let index = test_index();
+    let leit = StagedLeitSource::new(LeitSource::new(
+        &index,
+        |doc_id| match doc_id {
+            1 => Some(DemoSubject("command.open_scene")),
+            2 => Some(DemoSubject("command.inspect_object")),
+            _ => None,
+        },
+        SearchScorer::bm25(),
+    ));
+    let duplicate_context = DuplicateContextSource;
+    let sources: [(&str, &dyn StagedRetrievalSource<DemoSubject>); 2] = [
+        ("leit.materialized", &leit),
+        ("context.duplicate", &duplicate_context),
+    ];
+    let query = PortolanQuery::<(), ()>::text("open");
+    let router = RetrievalRouter::new();
+    let mut sink = CandidateBuffer::<DemoSubject>::new();
+
+    let trace = router.retrieve_traced_with_policy(
+        RoutePlan::standard(),
+        RoutePolicy {
+            stop_after_stage_hits: None,
+            stop_after_total_hits: None,
+            duplicate_policy: DuplicatePolicy::KeepFirstBySubject,
+        },
+        &sources,
+        &query,
+        &RetrievalContext::<(), (), (), ()>::default(),
+        RetrievalBudget::interactive_default(),
+        &mut sink,
+    );
+
+    assert_eq!(trace.sources_visited, 2);
+    assert_eq!(trace.stages_visited, 2);
+    assert_eq!(trace.hits_emitted, 1);
+    assert_eq!(trace.duplicates_suppressed, 1);
+    assert_eq!(trace.stages.len(), 2);
+    assert_eq!(trace.stages[0].hits_emitted, 1);
+    assert_eq!(trace.stages[0].duplicates_suppressed, 0);
+    assert_eq!(trace.stages[1].hits_emitted, 0);
+    assert_eq!(trace.stages[1].duplicates_suppressed, 1);
+    assert!(trace.stop_reason.is_none());
+    assert_eq!(sink.len(), 1);
+    assert_eq!(
+        sink.as_slice()[0].subject,
+        DemoSubject("command.open_scene")
+    );
+}
+
+#[test]
+fn later_stage_can_trigger_total_hit_stop_after_empty_earlier_stage() {
+    let context = ContextSource;
+    let sources: [(&str, &dyn StagedRetrievalSource<DemoSubject>); 1] =
+        [("context.recent", &context)];
+    let query = PortolanQuery::<(), ()>::text("open");
+    let router = RetrievalRouter::new();
+    let mut sink = CandidateBuffer::<DemoSubject>::new();
+
+    let trace = router.retrieve_traced_with_policy(
+        RoutePlan::standard(),
+        RoutePolicy {
+            stop_after_stage_hits: None,
+            stop_after_total_hits: Some(1),
+            duplicate_policy: DuplicatePolicy::RetainAll,
+        },
+        &sources,
+        &query,
+        &RetrievalContext::<(), (), (), ()>::default(),
+        RetrievalBudget::interactive_default(),
+        &mut sink,
+    );
+
+    assert_eq!(trace.sources_visited, 1);
+    assert_eq!(trace.stages_visited, 1);
+    assert_eq!(trace.hits_emitted, 1);
+    assert_eq!(trace.duplicates_suppressed, 0);
+    assert_eq!(trace.stages[0].stage, RouteStage::Contextual);
+    assert_eq!(
+        trace.stop_reason,
+        Some(portolan_observe::StopReason::TotalHitLimitReached {
+            stage: RouteStage::Contextual,
+            hits_emitted: 1,
+        })
+    );
+    assert_eq!(sink.len(), 1);
 }

@@ -73,6 +73,7 @@ they do not yet guarantee backend-truth provenance for every evidence record.
 ## Migration Notes
 
 - `ProjectionCatalog::insert` and `ProjectionCatalog::from_projections` now return `Result` and reject duplicate subjects. Existing call sites should handle or `expect(...)` that error explicitly.
+- `RoutePolicy` now includes `duplicate_policy`, and routed traces now report `duplicates_suppressed` per stage and per retrieval pass. Existing `RoutePolicy` literals should set `duplicate_policy` explicitly.
 
 ## Verification
 
