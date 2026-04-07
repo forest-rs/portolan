@@ -22,6 +22,7 @@ dependencies = [
  "leit_index",
  "leit_text",
  "portolan_core",
+ "portolan_ingest",
  "portolan_leit",
  "portolan_query",
  "portolan_route",
@@ -415,6 +416,17 @@ name = "portolan_core"
 version = "0.1.0"
 dependencies = [
  "leit_core",
+]
+
+[[package]]
+name = "portolan_ingest"
+version = "0.1.0"
+dependencies = [
+ "leit_core",
+ "leit_index",
+ "leit_text",
+ "portolan_core",
+ "portolan_schema",
 ]
 
 [[package]]

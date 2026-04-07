@@ -4,12 +4,13 @@
 //! Example showing Portolan routing over projected subjects.
 
 use leit_core::FieldId;
-use leit_index::{InMemoryIndex, InMemoryIndexBuilder, SearchScorer};
+use leit_index::SearchScorer;
 use leit_text::{Analyzer, FieldAnalyzers, UnicodeNormalizer, WhitespaceTokenizer};
 use portolan_core::{
     Affordance, Evidence, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin,
     StandardAffordance,
 };
+use portolan_ingest::{FieldAlias, build_leit_index};
 use portolan_leit::{LeitSource, TextQueryLowerer};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
@@ -189,26 +190,6 @@ fn analyzers() -> FieldAnalyzers {
     analyzers
 }
 
-fn build_index(
-    catalog: &ProjectionCatalog<DemoSubject, StandardAffordance, CommandMetadata>,
-) -> InMemoryIndex {
-    let mut builder = InMemoryIndexBuilder::new(analyzers());
-    builder.register_field_alias(FieldId::new(1), "title");
-    builder.register_field_alias(FieldId::new(2), "description");
-
-    for (doc_id, projection) in catalog.iter() {
-        let mut fields = Vec::new();
-        for field in &projection.materialized_fields {
-            fields.push((field.field, field.text.as_str()));
-        }
-        builder
-            .index_document(doc_id, &fields)
-            .expect("projection should index");
-    }
-
-    builder.build_index()
-}
-
 fn main() {
     let records = [
         CommandRecord {
@@ -247,7 +228,15 @@ fn main() {
     }
     println!();
 
-    let index = build_index(&catalog);
+    let index = build_leit_index(
+        &catalog,
+        analyzers(),
+        &[
+            FieldAlias::new(FieldId::new(1), "title"),
+            FieldAlias::new(FieldId::new(2), "description"),
+        ],
+    )
+    .expect("catalog should materialize into a Leit index");
     let mapper_catalog = catalog.clone();
     let enrich_catalog = catalog.clone();
     let mapper: SubjectMapper =

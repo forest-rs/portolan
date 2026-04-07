@@ -35,6 +35,7 @@ Its tests run under `std`.
 ## Workspace crates
 
 - `portolan_core`: typed hits, affordances, provenance, budgets, and resolver seams
+- `portolan_ingest`: materialization from projected subjects into retrieval backends
 - `portolan_leit`: adapters that lower Portolan retrieval into `leit_*`
 - `portolan_observe`: retrieval trace records and observation helpers
 - `portolan_query`: small, host-extensible query model

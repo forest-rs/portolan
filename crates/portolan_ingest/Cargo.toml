@@ -1,0 +1,27 @@
+[package]
+name = "portolan_ingest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Projection-to-index materialization for Portolan"
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["leit_index/std", "leit_text/std", "portolan_core/std", "portolan_schema/std"]
+
+[dependencies]
+leit_core = { workspace = true }
+leit_index = { workspace = true }
+leit_text = { workspace = true }
+portolan_core = { workspace = true }
+portolan_schema = { workspace = true }
+
+[lints]
+workspace = true

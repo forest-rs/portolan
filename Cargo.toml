@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/portolan_core",
+    "crates/portolan_ingest",
     "crates/portolan_integration_tests",
     "crates/portolan_leit",
     "crates/portolan_observe",
@@ -26,6 +27,7 @@ categories = ["data-structures", "development-tools"]
 [workspace.dependencies]
 # Internal crate dependencies
 portolan_core = { default-features = false, path = "crates/portolan_core" }
+portolan_ingest = { default-features = false, path = "crates/portolan_ingest" }
 portolan_integration_tests = { path = "crates/portolan_integration_tests" }
 portolan_leit = { default-features = false, path = "crates/portolan_leit" }
 portolan_observe = { default-features = false, path = "crates/portolan_observe" }

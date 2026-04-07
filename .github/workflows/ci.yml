@@ -13,6 +13,7 @@ env:
   # This should be limited to packages that are intended for publishing.
   RUST_MIN_VER_PKGS: >-
     -p portolan_core
+    -p portolan_ingest
     -p portolan_leit
     -p portolan_observe
     -p portolan_query
