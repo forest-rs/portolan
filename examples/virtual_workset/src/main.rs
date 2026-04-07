@@ -3,6 +3,7 @@
 
 //! Example showing Portolan routing across materialized and virtual sources.
 
+use std::string::String;
 use std::vec::Vec;
 
 use leit_core::{FieldId, Score};
@@ -276,6 +277,17 @@ fn subject_label(subject: &DemoSubject) -> &'static str {
     }
 }
 
+fn visible_entity_lines(context: &RetrievalContext<(), (), VisibleWorkset, ()>) -> Vec<String> {
+    match &context.visible_view {
+        Some(workset) => workset
+            .entities
+            .iter()
+            .map(|entity| format!("{} ({})", entity.id, entity.label))
+            .collect(),
+        None => vec!["[stale] visible workset is unavailable in host state".to_owned()],
+    }
+}
+
 fn main() {
     let records = [
         CommandRecord {
@@ -369,13 +381,8 @@ fn main() {
         budget.max_virtual_expansions
     );
     println!("   - visible entities:");
-    for entity in &context
-        .visible_view
-        .as_ref()
-        .expect("example should provide a visible workset")
-        .entities
-    {
-        println!("     - {} ({})", entity.id, entity.label);
+    for line in visible_entity_lines(&context) {
+        println!("     - {line}");
     }
     println!();
 
@@ -418,5 +425,28 @@ fn main() {
                 evidence.kind
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn renders_missing_visible_workset_without_panicking() {
+        let context = RetrievalContext::<(), (), VisibleWorkset, ()> {
+            selection: None,
+            focus: None,
+            visible_view: None,
+            recent: None,
+        };
+
+        let lines = visible_entity_lines(&context);
+
+        assert_eq!(lines.len(), 1);
+        assert_eq!(
+            lines[0],
+            "[stale] visible workset is unavailable in host state"
+        );
     }
 }
