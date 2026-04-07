@@ -3,6 +3,9 @@
 A structured retrieval substrate for navigating and acting within a live,
 partially materialized world.
 
+> A portolan was a mariner's chart: a practical map for navigation, routes,
+> landmarks, and making progress through a world too large to hold all at once.
+
 Portolan is a workspace of small crates that sits above `leit_*`.
 `leit_*` owns lexical retrieval kernels and index execution.
 `portolan_*` owns typed candidate retrieval over host-defined subjects, with

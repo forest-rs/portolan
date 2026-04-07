@@ -3,11 +3,32 @@
 
 //! Curated facade crate for Portolan structured retrieval.
 //!
-//! This crate provides the preferred way into the Portolan workspace:
+//! A portolan was a mariner's chart: a practical map for navigation, routes,
+//! landmarks, and making progress through a world too large to hold all at
+//! once.
+//!
+//! That is the intended shape of this crate.
+//! Portolan sits between canonical host state, retrieval engines such as
+//! `leit_*`, and interaction surfaces such as palettes, pickers, inspectors,
+//! or automation systems. It is not a UI crate and not a retrieval kernel.
+//! It is the layer that turns queries plus live host context into typed,
+//! actionable, explainable candidates.
+//!
+//! This facade crate is the preferred way into the Portolan workspace when you
+//! want the main retrieval path without importing many `portolan_*` crates
+//! directly.
+//!
+//! It provides:
 //! - top-level re-exports for the common retrieval workflow
 //! - nested modules for lower-level or backend-specific layers
 //! - explicit features for heavier integrations such as schema, ingest, and
 //!   Leit-backed retrieval
+//!
+//! The intended top-level workflow is:
+//! - construct a `PortolanQuery`
+//! - package one host-defined `RetrievalContext`
+//! - run sources through a `RetrievalRouter`
+//! - receive typed `PortolanHit` values with evidence and affordances
 //!
 //! ```
 //! use portolan::{PortolanQuery, RetrievalContext, RetrievalRouter, RoutePlan};
