@@ -36,6 +36,28 @@ impl<Scope, Filter> PortolanQuery<Scope, Filter> {
             parsed,
         }
     }
+
+    /// Create a plain text query.
+    pub fn text(text: impl Into<String>) -> Self
+    where
+        Scope: Default,
+        Filter: Default,
+    {
+        let text = text.into();
+        Self::new(text.clone(), ParsedQuery::Text { text })
+    }
+
+    /// Create a scoped query.
+    pub fn scoped(scope: Scope, text: impl Into<String>) -> Self {
+        let text = text.into();
+        Self::new(text.clone(), ParsedQuery::Scoped { scope, text })
+    }
+
+    /// Create a structured query with filters.
+    pub fn structured(filters: Vec<Filter>, text: impl Into<String>) -> Self {
+        let text = text.into();
+        Self::new(text.clone(), ParsedQuery::Structured { filters, text })
+    }
 }
 
 /// A minimal parsed query shape.
@@ -80,6 +102,19 @@ mod tests {
             query.parsed,
             ParsedQuery::Text {
                 text: "open scene".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn text_constructor_builds_text_query() {
+        let query = PortolanQuery::<(), ()>::text("open");
+
+        assert_eq!(query.raw, "open");
+        assert_eq!(
+            query.parsed,
+            ParsedQuery::Text {
+                text: "open".into(),
             }
         );
     }

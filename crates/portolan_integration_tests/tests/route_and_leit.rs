@@ -11,21 +11,12 @@ use portolan_core::{
     StandardAffordance,
 };
 use portolan_leit::LeitSource;
-use portolan_query::{ParsedQuery, PortolanQuery};
+use portolan_query::PortolanQuery;
 use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
-use portolan_source::{CandidateSink, RetrievalSource};
+use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct DemoSubject(&'static str);
-
-#[derive(Default)]
-struct VecSink(Vec<PortolanHit<DemoSubject>>);
-
-impl CandidateSink<DemoSubject> for VecSink {
-    fn push(&mut self, hit: PortolanHit<DemoSubject>) {
-        self.0.push(hit);
-    }
-}
 
 struct ContextSource;
 
@@ -143,14 +134,9 @@ fn routes_materialized_sources_before_contextual_sources() {
     let context = ContextSource;
     let sources: [(&str, &dyn StagedRetrievalSource<DemoSubject>); 2] =
         [("leit.materialized", &leit), ("context.recent", &context)];
-    let query = PortolanQuery::new(
-        "open",
-        ParsedQuery::<(), ()>::Text {
-            text: "open".into(),
-        },
-    );
+    let query = PortolanQuery::<(), ()>::text("open");
     let router = RetrievalRouter::new();
-    let mut sink = VecSink::default();
+    let mut sink = CandidateBuffer::<DemoSubject>::new();
 
     let trace = router.retrieve_traced(
         RoutePlan::standard(),
@@ -166,11 +152,14 @@ fn routes_materialized_sources_before_contextual_sources() {
     assert_eq!(trace.visits.len(), 2);
     assert_eq!(trace.visits[0].source, "leit.materialized");
     assert_eq!(trace.visits[1].source, "context.recent");
-    assert_eq!(sink.0.len(), 2);
-    assert_eq!(sink.0[0].subject, DemoSubject("command.open_scene"));
-    assert_eq!(sink.0[0].origin, RetrievalOrigin::Derived);
-    assert_eq!(sink.0[0].affordances.len(), 1);
-    assert_eq!(sink.0[0].evidence.len(), 1);
-    assert_eq!(sink.0[1].subject, DemoSubject("context.recent"));
-    assert_eq!(sink.0[1].origin, RetrievalOrigin::ContextCache);
+    assert_eq!(sink.len(), 2);
+    assert_eq!(
+        sink.as_slice()[0].subject,
+        DemoSubject("command.open_scene")
+    );
+    assert_eq!(sink.as_slice()[0].origin, RetrievalOrigin::Derived);
+    assert_eq!(sink.as_slice()[0].affordances.len(), 1);
+    assert_eq!(sink.as_slice()[0].evidence.len(), 1);
+    assert_eq!(sink.as_slice()[1].subject, DemoSubject("context.recent"));
+    assert_eq!(sink.as_slice()[1].origin, RetrievalOrigin::ContextCache);
 }

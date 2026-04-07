@@ -10,8 +10,12 @@
 
 #![no_std]
 
+extern crate alloc;
+
 #[cfg(feature = "std")]
 extern crate std;
+
+use alloc::vec::Vec;
 
 use portolan_core::{PortolanHit, RetrievalBudget, RetrievalContext, SubjectRef};
 use portolan_query::PortolanQuery;
@@ -20,6 +24,45 @@ use portolan_query::PortolanQuery;
 pub trait CandidateSink<S: SubjectRef, A = portolan_core::StandardAffordance, E = ()> {
     /// Push one candidate into the sink.
     fn push(&mut self, hit: PortolanHit<S, A, E>);
+}
+
+/// A simple growable candidate sink backed by a `Vec`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CandidateBuffer<S: SubjectRef, A = portolan_core::StandardAffordance, E = ()> {
+    hits: Vec<PortolanHit<S, A, E>>,
+}
+
+impl<S: SubjectRef, A, E> CandidateBuffer<S, A, E> {
+    /// Create an empty candidate buffer.
+    pub fn new() -> Self {
+        Self { hits: Vec::new() }
+    }
+
+    /// Number of retained hits.
+    pub fn len(&self) -> usize {
+        self.hits.len()
+    }
+
+    /// Whether the buffer contains no hits.
+    pub fn is_empty(&self) -> bool {
+        self.hits.is_empty()
+    }
+
+    /// Borrow retained hits.
+    pub fn as_slice(&self) -> &[PortolanHit<S, A, E>] {
+        &self.hits
+    }
+
+    /// Consume the buffer and return the retained hits.
+    pub fn into_hits(self) -> Vec<PortolanHit<S, A, E>> {
+        self.hits
+    }
+}
+
+impl<S: SubjectRef, A, E> CandidateSink<S, A, E> for CandidateBuffer<S, A, E> {
+    fn push(&mut self, hit: PortolanHit<S, A, E>) {
+        self.hits.push(hit);
+    }
 }
 
 /// A retrieval source in the first synchronous Portolan slice.

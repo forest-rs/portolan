@@ -15,7 +15,7 @@ use portolan_leit::{LeitSource, TextQueryLowerer};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
-use portolan_source::{CandidateSink, RetrievalSource};
+use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum DemoSubject {
@@ -60,15 +60,6 @@ impl ProjectSubject<CommandRecord, DemoSubject, StandardAffordance, CommandMetad
         )
         .with_affordances(vec![Affordance::new(StandardAffordance::Execute)])
         .with_metadata(CommandMetadata { title: value.title })
-    }
-}
-
-#[derive(Default)]
-struct VecSink(Vec<DemoHit>);
-
-impl CandidateSink<DemoSubject, StandardAffordance, &'static str> for VecSink {
-    fn push(&mut self, hit: DemoHit) {
-        self.0.push(hit);
     }
 }
 
@@ -261,13 +252,8 @@ fn main() {
     ];
     let router = RetrievalRouter::new();
     let plan = RoutePlan::standard();
-    let query = PortolanQuery::new(
-        "open",
-        ParsedQuery::<(), ()>::Text {
-            text: "open".into(),
-        },
-    );
-    let mut sink = VecSink::default();
+    let query = PortolanQuery::<(), ()>::text("open");
+    let mut sink = CandidateBuffer::<DemoSubject, StandardAffordance, &'static str>::new();
 
     println!("2. Build a Leit-backed materialized source and one contextual source");
     println!("   - source 1 stage: {}", stage_label(materialized.stage()));
@@ -311,7 +297,7 @@ fn main() {
             visit.source
         );
     }
-    for (index, hit) in sink.0.iter().enumerate() {
+    for (index, hit) in sink.as_slice().iter().enumerate() {
         println!(
             "   {}. {} | score={:.3} | origin={}",
             index + 1,
