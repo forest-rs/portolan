@@ -23,14 +23,17 @@ env:
   RUST_STD_ONLY_PKGS: >-
     --exclude portolan_integration_tests
     --exclude basic_routing
+    --exclude virtual_workset
   # List of packages that don't support wasip1
   RUST_NO_WASIP1_PKGS: >-
     --exclude portolan_integration_tests
     --exclude basic_routing
+    --exclude virtual_workset
   # List of packages that don't support wasm32
   RUST_NO_WASM_PKGS: >-
     --exclude portolan_integration_tests
     --exclude basic_routing
+    --exclude virtual_workset
   # List of features that depend on the standard library and will be excluded from no_std checks.
   FEATURES_DEPENDING_ON_STD: "std,default"
 

@@ -21,9 +21,11 @@ use core::cell::RefCell;
 
 use leit_index::{ExecutionWorkspace, InMemoryIndex, SearchScorer};
 use portolan_core::{
-    Affordance, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin, SubjectRef,
+    Affordance, Evidence, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin, Score,
+    SubjectRef,
 };
 use portolan_query::{ParsedQuery, PortolanQuery};
+use portolan_schema::{ProjectionCatalog, SubjectProjection};
 use portolan_source::{CandidateSink, RetrievalSource};
 
 /// Maps Leit document identifiers into host-defined Portolan subjects.
@@ -39,6 +41,25 @@ where
 {
     fn map_subject(&self, doc_id: u32) -> Option<S> {
         self(doc_id)
+    }
+}
+
+/// Subject mapper backed by a projection catalog.
+#[derive(Clone, Copy, Debug)]
+pub struct CatalogSubjectMapper<'a, S: SubjectRef, A = portolan_core::StandardAffordance, M = ()> {
+    catalog: &'a ProjectionCatalog<S, A, M>,
+}
+
+impl<'a, S: SubjectRef, A, M> CatalogSubjectMapper<'a, S, A, M> {
+    /// Create a subject mapper over one projection catalog.
+    pub const fn new(catalog: &'a ProjectionCatalog<S, A, M>) -> Self {
+        Self { catalog }
+    }
+}
+
+impl<S: SubjectRef, A, M> SubjectMapper<S> for CatalogSubjectMapper<'_, S, A, M> {
+    fn map_subject(&self, doc_id: u32) -> Option<S> {
+        self.catalog.subject(doc_id).cloned()
     }
 }
 
@@ -75,6 +96,97 @@ where
 {
     fn enrich_hit(&self, doc_id: u32, hit: &mut PortolanHit<S, A, E>) {
         self(doc_id, hit);
+    }
+}
+
+/// Builds optional evidence records for catalog-backed hits.
+pub trait ProjectionEvidenceBuilder<S: SubjectRef, A, M, E> {
+    /// Build one evidence record for a projected hit.
+    fn build_evidence(
+        &self,
+        projection: &SubjectProjection<S, A, M>,
+        score: Score,
+    ) -> Option<Evidence<E>>;
+}
+
+impl<S, A, M, E, F> ProjectionEvidenceBuilder<S, A, M, E> for F
+where
+    S: SubjectRef,
+    F: Fn(&SubjectProjection<S, A, M>, Score) -> Option<Evidence<E>>,
+{
+    fn build_evidence(
+        &self,
+        projection: &SubjectProjection<S, A, M>,
+        score: Score,
+    ) -> Option<Evidence<E>> {
+        self(projection, score)
+    }
+}
+
+/// Evidence builder that leaves catalog-backed hits unchanged.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoopProjectionEvidence;
+
+impl<S: SubjectRef, A, M, E> ProjectionEvidenceBuilder<S, A, M, E> for NoopProjectionEvidence {
+    fn build_evidence(
+        &self,
+        _projection: &SubjectProjection<S, A, M>,
+        _score: Score,
+    ) -> Option<Evidence<E>> {
+        None
+    }
+}
+
+/// Hit enricher backed by a projection catalog.
+#[derive(Clone, Copy, Debug)]
+pub struct CatalogHitEnricher<
+    'a,
+    S: SubjectRef,
+    A = portolan_core::StandardAffordance,
+    M = (),
+    EvidenceBuilder = NoopProjectionEvidence,
+> {
+    catalog: &'a ProjectionCatalog<S, A, M>,
+    evidence_builder: EvidenceBuilder,
+}
+
+impl<'a, S: SubjectRef, A, M> CatalogHitEnricher<'a, S, A, M, NoopProjectionEvidence> {
+    /// Create a hit enricher over one projection catalog.
+    pub const fn new(catalog: &'a ProjectionCatalog<S, A, M>) -> Self {
+        Self {
+            catalog,
+            evidence_builder: NoopProjectionEvidence,
+        }
+    }
+}
+
+impl<'a, S: SubjectRef, A, M, EvidenceBuilder> CatalogHitEnricher<'a, S, A, M, EvidenceBuilder> {
+    /// Replace the evidence builder for catalog-backed hits.
+    pub fn with_evidence_builder<NewEvidenceBuilder>(
+        self,
+        evidence_builder: NewEvidenceBuilder,
+    ) -> CatalogHitEnricher<'a, S, A, M, NewEvidenceBuilder> {
+        CatalogHitEnricher {
+            catalog: self.catalog,
+            evidence_builder,
+        }
+    }
+}
+
+impl<S, A, M, E, EvidenceBuilder> HitEnricher<S, A, E>
+    for CatalogHitEnricher<'_, S, A, M, EvidenceBuilder>
+where
+    S: SubjectRef,
+    A: Clone,
+    EvidenceBuilder: ProjectionEvidenceBuilder<S, A, M, E>,
+{
+    fn enrich_hit(&self, doc_id: u32, hit: &mut PortolanHit<S, A, E>) {
+        if let Some(projection) = self.catalog.projection(doc_id) {
+            hit.affordances = projection.affordances.clone();
+            if let Some(evidence) = self.evidence_builder.build_evidence(projection, hit.score) {
+                hit.evidence.push(evidence);
+            }
+        }
     }
 }
 
@@ -181,5 +293,63 @@ where
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use portolan_core::{
+        Affordance, Evidence, FieldId, PortolanHit, RetrievalOrigin, Score, StandardAffordance,
+    };
+    use portolan_schema::{MaterializedField, ProjectionCatalog, SubjectProjection};
+
+    use super::{CatalogHitEnricher, CatalogSubjectMapper, HitEnricher, SubjectMapper};
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    struct DemoSubject(&'static str);
+
+    #[test]
+    fn catalog_helpers_map_subjects_and_enrich_hits() {
+        let catalog = ProjectionCatalog::from_projections([SubjectProjection::new(
+            DemoSubject("command.open"),
+            vec![MaterializedField::new(FieldId::new(1), "Open")],
+        )
+        .with_affordances(vec![Affordance::new(StandardAffordance::Open)])]);
+
+        let mapper = CatalogSubjectMapper::new(&catalog);
+        let mut hit = PortolanHit {
+            subject: mapper
+                .map_subject(1)
+                .expect("projection catalog should map subject"),
+            score: Score::new(1.5),
+            evidence: Vec::new(),
+            affordances: Vec::new(),
+            origin: RetrievalOrigin::MaterializedIndex,
+        };
+
+        CatalogHitEnricher::new(&catalog)
+            .with_evidence_builder(|projection: &SubjectProjection<DemoSubject>, score| {
+                Some(Evidence {
+                    field: projection
+                        .materialized_fields
+                        .first()
+                        .map(|field| field.field),
+                    contribution: score,
+                    kind: "projection",
+                })
+            })
+            .enrich_hit(1, &mut hit);
+
+        assert_eq!(
+            hit.affordances,
+            vec![Affordance::new(StandardAffordance::Open)]
+        );
+        assert_eq!(hit.evidence.len(), 1);
+        assert_eq!(hit.evidence[0].field, Some(FieldId::new(1)));
+        assert_eq!(hit.evidence[0].contribution, Score::new(1.5));
+        assert_eq!(hit.evidence[0].kind, "projection");
     }
 }

@@ -11,7 +11,7 @@ use portolan_core::{
     StandardAffordance,
 };
 use portolan_ingest::{FieldAlias, build_leit_index};
-use portolan_leit::{LeitSource, TextQueryLowerer};
+use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
@@ -35,10 +35,21 @@ struct CommandMetadata {
     title: &'static str,
 }
 
-type DemoHit = PortolanHit<DemoSubject, StandardAffordance, &'static str>;
-type SubjectMapper = Box<dyn Fn(u32) -> Option<DemoSubject>>;
-type HitEnricher = Box<dyn Fn(u32, &mut DemoHit)>;
-type DemoLeitSource<'a> = LeitSource<'a, SubjectMapper, TextQueryLowerer, HitEnricher>;
+type DemoLeitSource<'a> = LeitSource<
+    'a,
+    CatalogSubjectMapper<'a, DemoSubject, StandardAffordance, CommandMetadata>,
+    portolan_leit::TextQueryLowerer,
+    CatalogHitEnricher<
+        'a,
+        DemoSubject,
+        StandardAffordance,
+        CommandMetadata,
+        fn(
+            &SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>,
+            leit_core::Score,
+        ) -> Option<Evidence<&'static str>>,
+    >,
+>;
 type DemoSourceRef<'a> = &'a dyn StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>;
 type LabeledDemoSource<'a> = (&'a str, DemoSourceRef<'a>);
 
@@ -181,6 +192,20 @@ fn analyzers() -> FieldAnalyzers {
     analyzers
 }
 
+fn projection_evidence(
+    projection: &SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>,
+    score: leit_core::Score,
+) -> Option<Evidence<&'static str>> {
+    Some(Evidence {
+        field: projection
+            .materialized_fields
+            .first()
+            .map(|field| field.field),
+        contribution: score,
+        kind: "title_projection",
+    })
+}
+
 fn main() {
     let records = [
         CommandRecord {
@@ -228,22 +253,15 @@ fn main() {
         ],
     )
     .expect("catalog should materialize into a Leit index");
-    let mapper_catalog = catalog.clone();
-    let enrich_catalog = catalog.clone();
-    let mapper: SubjectMapper =
-        Box::new(move |doc_id: u32| mapper_catalog.subject(doc_id).cloned());
-    let enricher: HitEnricher = Box::new(move |doc_id: u32, hit: &mut DemoHit| {
-        if let Some(projection) = enrich_catalog.projection(doc_id) {
-            hit.affordances = projection.affordances.clone();
-            hit.evidence.push(Evidence {
-                field: Some(FieldId::new(1)),
-                contribution: hit.score,
-                kind: "title_projection",
-            });
-        }
-    });
     let materialized = MaterializedSource::new(
-        LeitSource::new(&index, mapper, SearchScorer::bm25()).with_enricher(enricher),
+        LeitSource::new(
+            &index,
+            CatalogSubjectMapper::new(&catalog),
+            SearchScorer::bm25(),
+        )
+        .with_enricher(
+            CatalogHitEnricher::new(&catalog).with_evidence_builder(projection_evidence),
+        ),
     );
     let contextual = ContextSource;
     let sources: [LabeledDemoSource<'_>; 2] = [

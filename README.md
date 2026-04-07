@@ -50,6 +50,7 @@ Examples live in top-level workspace members so core crates stay free of extra
 dev-dependencies.
 
 - `examples/basic_routing`: Leit-backed plus contextual routing over projected subjects
+- `examples/virtual_workset`: Leit-backed plus visible-workset virtual retrieval
 
 ## Planned crates
 
@@ -61,9 +62,9 @@ The intended family is broader than the first slice:
 
 ## Current status
 
-This workspace is an architectural skeleton. The first slice establishes the
-core vocabulary and traits so later crates can add routing, virtual expansion,
-and Leit-backed retrieval without collapsing the boundaries.
+This workspace now proves the core seams end to end: host projections can be
+materialized into Leit, routed alongside contextual or virtual sources, and
+returned as typed hits with provenance and affordances.
 
 ## Verification
 

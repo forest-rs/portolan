@@ -18,6 +18,7 @@ std = [
     "leit_index/std",
     "portolan_core/std",
     "portolan_query/std",
+    "portolan_schema/std",
     "portolan_source/std",
 ]
 
@@ -25,6 +26,7 @@ std = [
 leit_index = { workspace = true }
 portolan_core = { workspace = true }
 portolan_query = { workspace = true }
+portolan_schema = { workspace = true }
 portolan_source = { workspace = true }
 
 [lints]

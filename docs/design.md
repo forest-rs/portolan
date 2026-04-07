@@ -60,7 +60,8 @@ canonical world state, or host action execution.
   - Owns staged multi-source orchestration over object-safe retrieval sources.
   - Explicitly does not own source-specific lowering or host action execution.
 - `portolan_leit`
-  - Owns lowering from Portolan query envelopes into `leit_*` textual retrieval.
+  - Owns lowering from Portolan query envelopes into `leit_*` textual retrieval
+    plus adapter seams from projection catalogs back into typed Portolan hits.
   - Explicitly does not own routing policy or Portolan-wide query semantics.
 - `portolan_integration_tests`
   - Owns cross-crate verification only.
