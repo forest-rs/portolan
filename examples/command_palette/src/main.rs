@@ -17,7 +17,8 @@ use portolan_ingest::{FieldAlias, build_leit_index};
 use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{
-    DuplicatePolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource,
+    DuplicatePolicy, HitVerifier, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage,
+    StagedRetrievalSource, VerificationOutcome,
 };
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
 use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
@@ -68,13 +69,19 @@ struct PaletteRecent {
     entries: Vec<RecentEntry>,
 }
 
-type PaletteContext = RetrievalContext<(), (), PaletteView, PaletteRecent>;
+#[derive(Clone, Debug)]
+struct PaletteTruth {
+    object_ids: Vec<&'static str>,
+    recent_ids: Vec<&'static str>,
+}
+
+type PaletteContext = RetrievalContext<PaletteTruth, (), PaletteView, PaletteRecent>;
 type PaletteEvidence = &'static str;
 type PaletteSourceRef<'a> = &'a dyn StagedRetrievalSource<
     PaletteSubject,
     (),
     (),
-    (),
+    PaletteTruth,
     (),
     PaletteView,
     PaletteRecent,
@@ -105,6 +112,70 @@ struct PaletteResponse {
 }
 
 struct PaletteResolver;
+
+struct PaletteVerifier<'a> {
+    catalog: &'a ProjectionCatalog<PaletteSubject, StandardAffordance, CommandMetadata>,
+}
+
+impl<'a> PaletteVerifier<'a> {
+    const fn new(
+        catalog: &'a ProjectionCatalog<PaletteSubject, StandardAffordance, CommandMetadata>,
+    ) -> Self {
+        Self { catalog }
+    }
+}
+
+impl
+    HitVerifier<
+        PaletteSubject,
+        PaletteTruth,
+        (),
+        PaletteView,
+        PaletteRecent,
+        StandardAffordance,
+        PaletteEvidence,
+    > for PaletteVerifier<'_>
+{
+    fn verify_hit(
+        &self,
+        hit: &mut PortolanHit<PaletteSubject, StandardAffordance, PaletteEvidence>,
+        context: &PaletteContext,
+    ) -> VerificationOutcome {
+        match &hit.subject {
+            PaletteSubject::Command(_) => {
+                if self.catalog.doc_id_for_subject(&hit.subject).is_some() {
+                    VerificationOutcome::Retain
+                } else {
+                    VerificationOutcome::Reject
+                }
+            }
+            PaletteSubject::Object(id) => {
+                context
+                    .selection
+                    .as_ref()
+                    .map_or(VerificationOutcome::Reject, |truth| {
+                        if truth.object_ids.iter().any(|candidate| candidate == id) {
+                            VerificationOutcome::Retain
+                        } else {
+                            VerificationOutcome::Reject
+                        }
+                    })
+            }
+            PaletteSubject::Recent(id) => {
+                context
+                    .selection
+                    .as_ref()
+                    .map_or(VerificationOutcome::Reject, |truth| {
+                        if truth.recent_ids.iter().any(|candidate| candidate == id) {
+                            VerificationOutcome::Retain
+                        } else {
+                            VerificationOutcome::Reject
+                        }
+                    })
+            }
+        }
+    }
+}
 
 impl AffordanceResolver<PaletteSubject, StandardAffordance> for PaletteResolver {
     type Resolved = PaletteAction;
@@ -177,7 +248,7 @@ impl
         PaletteSubject,
         (),
         (),
-        (),
+        PaletteTruth,
         (),
         PaletteView,
         PaletteRecent,
@@ -238,7 +309,7 @@ impl
         PaletteSubject,
         (),
         (),
-        (),
+        PaletteTruth,
         (),
         PaletteView,
         PaletteRecent,
@@ -258,7 +329,7 @@ impl
         PaletteSubject,
         (),
         (),
-        (),
+        PaletteTruth,
         (),
         PaletteView,
         PaletteRecent,
@@ -318,7 +389,7 @@ impl
         PaletteSubject,
         (),
         (),
-        (),
+        PaletteTruth,
         (),
         PaletteView,
         PaletteRecent,
@@ -346,7 +417,7 @@ impl<Inner>
         PaletteSubject,
         (),
         (),
-        (),
+        PaletteTruth,
         (),
         PaletteView,
         PaletteRecent,
@@ -358,7 +429,7 @@ where
             PaletteSubject,
             (),
             (),
-            (),
+            PaletteTruth,
             (),
             PaletteView,
             PaletteRecent,
@@ -382,7 +453,7 @@ impl<Inner>
         PaletteSubject,
         (),
         (),
-        (),
+        PaletteTruth,
         (),
         PaletteView,
         PaletteRecent,
@@ -394,7 +465,7 @@ where
             PaletteSubject,
             (),
             (),
-            (),
+            PaletteTruth,
             (),
             PaletteView,
             PaletteRecent,
@@ -414,6 +485,7 @@ struct CommandPalette<'a> {
     policy: RoutePolicy,
     sources: [LabeledPaletteSource<'a>; 3],
     catalog: &'a ProjectionCatalog<PaletteSubject, StandardAffordance, CommandMetadata>,
+    verifier: PaletteVerifier<'a>,
     resolver: PaletteResolver,
 }
 
@@ -438,6 +510,7 @@ impl<'a> CommandPalette<'a> {
             },
             sources,
             catalog,
+            verifier: PaletteVerifier::new(catalog),
             resolver: PaletteResolver,
         }
     }
@@ -446,13 +519,14 @@ impl<'a> CommandPalette<'a> {
         let query = PortolanQuery::<(), ()>::text(input);
         let mut hits =
             CandidateBuffer::<PaletteSubject, StandardAffordance, PaletteEvidence>::new();
-        let trace = self.router.retrieve_traced_with_policy(
+        let trace = self.router.retrieve_traced_verified_with_policy(
             self.plan,
             self.policy,
             &self.sources,
             &query,
             context,
             self.budget,
+            &self.verifier,
             &mut hits,
         );
         let items = hits
@@ -625,7 +699,14 @@ fn main() {
         &catalog,
     );
     let context = PaletteContext {
-        selection: None,
+        selection: Some(PaletteTruth {
+            object_ids: vec![
+                "object.camera.main",
+                "object.camera.preview",
+                "object.light.key",
+            ],
+            recent_ids: vec!["recent.camera_panel"],
+        }),
         focus: None,
         visible_view: Some(PaletteView {
             objects: vec![
@@ -658,6 +739,11 @@ fn main() {
                     title: "Capture Preview",
                     subtitle: "Recently used command",
                 },
+                RecentEntry {
+                    id: "recent.stale_camera_cache",
+                    title: "Open Camera Panel",
+                    subtitle: "Cached stale suggestion",
+                },
             ],
         }),
     };
@@ -674,11 +760,15 @@ fn main() {
     );
     println!("   stop policy: stop after 3 total hits");
     println!("   duplicate policy: keep first hit per subject");
+    println!("   verification: reject hits that are no longer present in host truth");
     println!();
 
     let response = palette.search("camera", &context);
 
     println!("2. Render the palette response");
+    println!("   host truth:");
+    println!("     - valid recent ids: recent.camera_panel");
+    println!("     - stale cached recent ids will be rejected before rendering");
     println!(
         "   visited {} stages across {} sources",
         response.trace.stages_visited, response.trace.sources_visited
@@ -694,17 +784,24 @@ fn main() {
     println!("   stage summary:");
     for stage in &response.trace.stages {
         println!(
-            "     - stage={} sources={} hits={} duplicates_suppressed={}",
+            "     - stage={} sources={} hits={} duplicates_suppressed={} hits_rejected={}",
             stage_label(stage.stage),
             stage.sources_visited,
             stage.hits_emitted,
-            stage.duplicates_suppressed
+            stage.duplicates_suppressed,
+            stage.hits_rejected
         );
     }
     if response.trace.duplicates_suppressed > 0 {
         println!(
             "   duplicates suppressed: {}",
             response.trace.duplicates_suppressed
+        );
+    }
+    if response.trace.hits_rejected > 0 {
+        println!(
+            "   hits rejected by verification: {}",
+            response.trace.hits_rejected
         );
     }
     if let Some(stop_reason) = &response.trace.stop_reason {
@@ -776,7 +873,7 @@ mod tests {
             PaletteSubject,
             (),
             (),
-            (),
+            PaletteTruth,
             (),
             PaletteView,
             PaletteRecent,
@@ -799,7 +896,7 @@ mod tests {
             PaletteSubject,
             (),
             (),
-            (),
+            PaletteTruth,
             (),
             PaletteView,
             PaletteRecent,
@@ -816,7 +913,10 @@ mod tests {
     fn renders_stale_subjects_without_panicking() {
         let palette = empty_palette();
         let context = PaletteContext {
-            selection: None,
+            selection: Some(PaletteTruth {
+                object_ids: Vec::new(),
+                recent_ids: Vec::new(),
+            }),
             focus: None,
             visible_view: Some(PaletteView {
                 objects: Vec::new(),
@@ -845,5 +945,87 @@ mod tests {
             recent.1,
             "subject recent.missing is no longer available in host state"
         );
+    }
+
+    #[test]
+    fn search_rejects_stale_cached_recent_hits() {
+        let commands = [CommandRecord {
+            id: "command.open_camera_panel",
+            title: "Open Camera Panel",
+            description: "Open camera controls in the inspector",
+            category: "Navigation",
+        }];
+        let projector = CommandProjector;
+        let catalog = Box::leak(Box::new(
+            ProjectionCatalog::from_projections(
+                commands.iter().map(|command| projector.project(command)),
+            )
+            .expect("test commands should not duplicate subjects"),
+        ));
+        let index = build_leit_index(
+            catalog,
+            analyzers(),
+            &[
+                FieldAlias::new(FieldId::new(1), "title"),
+                FieldAlias::new(FieldId::new(2), "description"),
+                FieldAlias::new(FieldId::new(3), "category"),
+            ],
+        )
+        .expect("test commands should materialize");
+        let materialized = Box::leak(Box::new(MaterializedSource::new(
+            LeitSource::new(
+                &index,
+                CatalogSubjectMapper::new(catalog),
+                SearchScorer::bm25(),
+            )
+            .with_enricher(
+                CatalogHitEnricher::new(catalog).with_first_field_evidence("command_projection"),
+            ),
+        )));
+        let recent = Box::leak(Box::new(RecentSource));
+        let visible_objects = Box::leak(Box::new(VisibleObjectSource));
+        let palette = CommandPalette::new(
+            [
+                ("palette.commands", materialized),
+                ("palette.recent", recent),
+                ("palette.visible_objects", visible_objects),
+            ],
+            catalog,
+        );
+        let context = PaletteContext {
+            selection: Some(PaletteTruth {
+                object_ids: vec![],
+                recent_ids: vec!["recent.camera_panel"],
+            }),
+            focus: None,
+            visible_view: Some(PaletteView {
+                objects: Vec::new(),
+            }),
+            recent: Some(PaletteRecent {
+                entries: vec![
+                    RecentEntry {
+                        id: "recent.camera_panel",
+                        title: "Open Camera Panel",
+                        subtitle: "Recently used command",
+                    },
+                    RecentEntry {
+                        id: "recent.stale_camera_cache",
+                        title: "Open Camera Panel",
+                        subtitle: "Cached stale suggestion",
+                    },
+                ],
+            }),
+        };
+
+        let response = palette.search("camera", &context);
+
+        assert_eq!(response.trace.hits_rejected, 1);
+        assert!(
+            response
+                .items
+                .iter()
+                .all(|item| item.title != "[stale] Recent")
+        );
+        assert_eq!(response.items.len(), 2);
     }
 }
