@@ -6,3 +6,6 @@ This crate defines the calm projection shape that host applications can use to
 turn canonical state into typed Portolan subjects plus materialized retrieval
 fields. It also provides a small projection catalog for stable doc-id assignment
 and reverse lookup.
+
+Each subject may appear at most once in a `ProjectionCatalog`. Duplicate
+subjects are rejected so document IDs and reverse lookup stay coherent.

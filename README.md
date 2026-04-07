@@ -67,6 +67,10 @@ This workspace now proves the core seams end to end: host projections can be
 materialized into Leit, routed alongside contextual or virtual sources, and
 returned as typed hits with provenance and affordances.
 
+## Migration Notes
+
+- `ProjectionCatalog::insert` and `ProjectionCatalog::from_projections` now return `Result` and reject duplicate subjects. Existing call sites should handle or `expect(...)` that error explicitly.
+
 ## Verification
 
 From the workspace root:

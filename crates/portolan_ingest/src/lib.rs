@@ -89,7 +89,8 @@ mod tests {
                 DemoSubject("command.inspect"),
                 vec![MaterializedField::new(FieldId::new(1), "Inspect Selection")],
             ),
-        ]);
+        ])
+        .expect("catalog should reject duplicate subjects");
 
         let index = build_leit_index(
             &catalog,

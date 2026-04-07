@@ -349,7 +349,8 @@ mod tests {
             DemoSubject("command.open"),
             vec![MaterializedField::new(FieldId::new(1), "Open")],
         )
-        .with_affordances(vec![Affordance::new(StandardAffordance::Open)])]);
+        .with_affordances(vec![Affordance::new(StandardAffordance::Open)])])
+        .expect("catalog should reject duplicate subjects");
 
         let mapper = CatalogSubjectMapper::new(&catalog);
         let mut hit = PortolanHit::new(

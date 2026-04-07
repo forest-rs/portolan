@@ -17,6 +17,7 @@ extern crate std;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt;
 use hashbrown::HashMap;
 
 use leit_core::FieldId;
@@ -90,6 +91,29 @@ pub trait ProjectSubject<Host, S: SubjectRef, A = StandardAffordance, M = ()> {
     fn project(&self, value: &Host) -> SubjectProjection<S, A, M>;
 }
 
+/// Error returned when a projection catalog cannot preserve its identity invariants.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProjectionCatalogError<S: SubjectRef> {
+    /// The subject is already present in the catalog.
+    DuplicateSubject {
+        /// Subject that would have been inserted twice.
+        subject: S,
+    },
+}
+
+impl<S: SubjectRef> fmt::Display for ProjectionCatalogError<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateSubject { subject } => {
+                write!(f, "projection catalog already contains subject {subject:?}")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<S: SubjectRef> std::error::Error for ProjectionCatalogError<S> {}
+
 /// Stable catalog of projections keyed by retrieval document ID.
 #[derive(Clone, Debug)]
 pub struct ProjectionCatalog<S: SubjectRef, A = StandardAffordance, M = ()> {
@@ -113,24 +137,33 @@ impl<S: SubjectRef, A, M> ProjectionCatalog<S, A, M> {
     }
 
     /// Insert one projection and return its stable document ID.
-    pub fn insert(&mut self, projection: SubjectProjection<S, A, M>) -> u32 {
+    pub fn insert(
+        &mut self,
+        projection: SubjectProjection<S, A, M>,
+    ) -> Result<u32, ProjectionCatalogError<S>> {
+        if self.doc_ids_by_subject.contains_key(&projection.subject) {
+            return Err(ProjectionCatalogError::DuplicateSubject {
+                subject: projection.subject,
+            });
+        }
+
         let doc_id =
             u32::try_from(self.projections.len() + 1).expect("projection count should fit in u32");
         self.doc_ids_by_subject
             .insert(projection.subject.clone(), doc_id);
         self.projections.push(projection);
-        doc_id
+        Ok(doc_id)
     }
 
     /// Build a catalog from an iterator of projections.
     pub fn from_projections(
         projections: impl IntoIterator<Item = SubjectProjection<S, A, M>>,
-    ) -> Self {
+    ) -> Result<Self, ProjectionCatalogError<S>> {
         let mut catalog = Self::new();
         for projection in projections {
-            let _ = catalog.insert(projection);
+            let _ = catalog.insert(projection)?;
         }
-        catalog
+        Ok(catalog)
     }
 
     /// Number of stored projections.
@@ -176,7 +209,7 @@ impl<S: SubjectRef, A, M> ProjectionCatalog<S, A, M> {
 mod tests {
     use alloc::vec;
 
-    use super::{ProjectionCatalog, SubjectProjection};
+    use super::{ProjectionCatalog, ProjectionCatalogError, SubjectProjection};
     use leit_core::FieldId;
     use portolan_core::StandardAffordance;
 
@@ -186,14 +219,18 @@ mod tests {
     #[test]
     fn assigns_stable_doc_ids_and_supports_reverse_lookup() {
         let mut catalog = ProjectionCatalog::<DemoSubject, StandardAffordance>::new();
-        let first = catalog.insert(SubjectProjection::new(
-            DemoSubject("command.open"),
-            vec![super::MaterializedField::new(FieldId::new(1), "Open")],
-        ));
-        let second = catalog.insert(SubjectProjection::new(
-            DemoSubject("command.inspect"),
-            vec![super::MaterializedField::new(FieldId::new(1), "Inspect")],
-        ));
+        let first = catalog
+            .insert(SubjectProjection::new(
+                DemoSubject("command.open"),
+                vec![super::MaterializedField::new(FieldId::new(1), "Open")],
+            ))
+            .expect("first subject should insert");
+        let second = catalog
+            .insert(SubjectProjection::new(
+                DemoSubject("command.inspect"),
+                vec![super::MaterializedField::new(FieldId::new(1), "Inspect")],
+            ))
+            .expect("second subject should insert");
 
         assert_eq!(first, 1);
         assert_eq!(second, 2);
@@ -203,5 +240,33 @@ mod tests {
             Some(2)
         );
         assert_eq!(catalog.len(), 2);
+    }
+
+    #[test]
+    fn rejects_duplicate_subjects() {
+        let mut catalog = ProjectionCatalog::<DemoSubject, StandardAffordance>::new();
+        let _ = catalog
+            .insert(SubjectProjection::new(
+                DemoSubject("command.open"),
+                vec![super::MaterializedField::new(FieldId::new(1), "Open")],
+            ))
+            .expect("first subject should insert");
+
+        let duplicate = catalog.insert(SubjectProjection::new(
+            DemoSubject("command.open"),
+            vec![super::MaterializedField::new(FieldId::new(1), "Open Again")],
+        ));
+
+        assert_eq!(
+            duplicate,
+            Err(ProjectionCatalogError::DuplicateSubject {
+                subject: DemoSubject("command.open")
+            })
+        );
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(
+            catalog.doc_id_for_subject(&DemoSubject("command.open")),
+            Some(1)
+        );
     }
 }

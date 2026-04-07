@@ -583,7 +583,8 @@ fn main() {
     let projector = CommandProjector;
     let catalog = ProjectionCatalog::from_projections(
         commands.iter().map(|command| projector.project(command)),
-    );
+    )
+    .expect("example should not contain duplicate subjects");
     let index = build_leit_index(
         &catalog,
         analyzers(),

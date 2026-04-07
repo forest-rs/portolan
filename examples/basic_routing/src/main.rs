@@ -197,7 +197,8 @@ fn main() {
     ];
     let projector = CommandProjector;
     let catalog =
-        ProjectionCatalog::from_projections(records.iter().map(|record| projector.project(record)));
+        ProjectionCatalog::from_projections(records.iter().map(|record| projector.project(record)))
+            .expect("example should not contain duplicate subjects");
 
     println!("Portolan basic routing example");
     println!();
