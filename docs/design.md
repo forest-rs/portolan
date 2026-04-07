@@ -34,6 +34,45 @@ lexical indexing, canonical world state, or host action execution.
 - Portolan may resolve affordances into host actions, but never executes those
   actions itself.
 
+## Glossary
+
+- `subject`
+  - A host-defined retrievable thing with stable identity, such as a command,
+    object, document, setting, or trace.
+- `query`
+  - The Portolan retrieval request, including raw user input plus any small
+    parsed structure such as scopes or filters.
+- `context`
+  - One explicit host-defined snapshot carried alongside a query so retrieval
+    can depend on live state without reading hidden ambient globals.
+- `source`
+  - A producer of retrieval candidates. Sources may be materialized,
+    contextual, or virtual.
+- `hit`
+  - A typed candidate emitted by retrieval, including subject identity, score,
+    origin, evidence, and affordances.
+- `evidence`
+  - Structured explanation attached to a hit describing why it matched or where
+    its score came from.
+- `affordance`
+  - A structured description of what a host or surface can do with one hit,
+    such as open, inspect, focus, or execute.
+- `origin`
+  - Provenance for how a hit entered the pipeline, such as materialized index,
+    context cache, visible workset, virtual scan, or derived result.
+- `route`
+  - The staged execution of multiple sources under one plan, policy, query, and
+    context.
+- `verification`
+  - A host-owned finalization step that retains or rejects routed hits against
+    canonical truth before they reach the caller sink.
+- `reconciliation`
+  - The policy Portolan applies when multiple sources emit the same subject,
+    such as retaining all hits, keeping the first, or keeping the best score.
+- `projection`
+  - A host-authored materialized view of one subject used to feed retrieval
+    backends such as Leit.
+
 ## Current crate map
 
 - `portolan`
