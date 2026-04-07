@@ -7,4 +7,5 @@ diagnostics layers can populate without forcing heavyweight instrumentation into
 the calm core.
 
 Current traces can account for stage visits, retained hits, suppressed
-duplicates, verification rejections, and explicit stop reasons.
+duplicates, same-subject replacements, verification rejections, and explicit
+stop reasons.

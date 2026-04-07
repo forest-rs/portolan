@@ -13,8 +13,8 @@ use portolan_core::{
 use portolan_leit::LeitSource;
 use portolan_query::PortolanQuery;
 use portolan_route::{
-    DuplicatePolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource,
-    VerificationOutcome,
+    ReconciliationPolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage,
+    StagedRetrievalSource, VerificationOutcome,
 };
 use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
@@ -94,6 +94,32 @@ impl RetrievalSource<DemoSubject> for UniqueContextSource {
 }
 
 impl StagedRetrievalSource<DemoSubject> for UniqueContextSource {
+    fn stage(&self) -> RouteStage {
+        RouteStage::Contextual
+    }
+}
+
+struct BetterContextSource;
+
+impl RetrievalSource<DemoSubject> for BetterContextSource {
+    fn retrieve_into(
+        &self,
+        _query: &PortolanQuery,
+        _context: &RetrievalContext,
+        _budget: RetrievalBudget,
+        out: &mut dyn CandidateSink<DemoSubject>,
+    ) {
+        out.push(PortolanHit {
+            subject: DemoSubject("command.open_scene"),
+            score: Score::new(1.80),
+            evidence: Vec::new(),
+            affordances: vec![Affordance::new(StandardAffordance::Inspect)],
+            origin: RetrievalOrigin::ContextCache,
+        });
+    }
+}
+
+impl StagedRetrievalSource<DemoSubject> for BetterContextSource {
     fn stage(&self) -> RouteStage {
         RouteStage::Contextual
     }
@@ -254,7 +280,7 @@ fn stops_after_stage_hit_limit_before_later_stages() {
         RoutePolicy {
             stop_after_stage_hits: Some(1),
             stop_after_total_hits: None,
-            duplicate_policy: DuplicatePolicy::RetainAll,
+            reconciliation_policy: ReconciliationPolicy::RetainAll,
         },
         &sources,
         &query,
@@ -311,7 +337,7 @@ fn deduplicates_subjects_across_stages_when_requested() {
         RoutePolicy {
             stop_after_stage_hits: None,
             stop_after_total_hits: None,
-            duplicate_policy: DuplicatePolicy::KeepFirstBySubject,
+            reconciliation_policy: ReconciliationPolicy::KeepFirstBySubject,
         },
         &sources,
         &query,
@@ -324,13 +350,16 @@ fn deduplicates_subjects_across_stages_when_requested() {
     assert_eq!(trace.stages_visited, 2);
     assert_eq!(trace.hits_emitted, 1);
     assert_eq!(trace.duplicates_suppressed, 1);
+    assert_eq!(trace.hits_replaced, 0);
     assert_eq!(trace.hits_rejected, 0);
     assert_eq!(trace.stages.len(), 2);
     assert_eq!(trace.stages[0].hits_emitted, 1);
     assert_eq!(trace.stages[0].duplicates_suppressed, 0);
+    assert_eq!(trace.stages[0].hits_replaced, 0);
     assert_eq!(trace.stages[0].hits_rejected, 0);
     assert_eq!(trace.stages[1].hits_emitted, 0);
     assert_eq!(trace.stages[1].duplicates_suppressed, 1);
+    assert_eq!(trace.stages[1].hits_replaced, 0);
     assert_eq!(trace.stages[1].hits_rejected, 0);
     assert!(trace.stop_reason.is_none());
     assert_eq!(sink.len(), 1);
@@ -358,7 +387,7 @@ fn later_stage_can_trigger_total_hit_stop_after_empty_earlier_stage() {
         RoutePolicy {
             stop_after_stage_hits: None,
             stop_after_total_hits: Some(1),
-            duplicate_policy: DuplicatePolicy::RetainAll,
+            reconciliation_policy: ReconciliationPolicy::RetainAll,
         },
         &sources,
         &query,
@@ -371,6 +400,7 @@ fn later_stage_can_trigger_total_hit_stop_after_empty_earlier_stage() {
     assert_eq!(trace.stages_visited, 1);
     assert_eq!(trace.hits_emitted, 1);
     assert_eq!(trace.duplicates_suppressed, 0);
+    assert_eq!(trace.hits_replaced, 0);
     assert_eq!(trace.hits_rejected, 0);
     assert_eq!(trace.stages[0].stage, RouteStage::Contextual);
     assert_eq!(
@@ -409,7 +439,7 @@ fn verification_rejects_hits_before_they_pollute_duplicate_tracking() {
         RoutePolicy {
             stop_after_stage_hits: None,
             stop_after_total_hits: None,
-            duplicate_policy: DuplicatePolicy::KeepFirstBySubject,
+            reconciliation_policy: ReconciliationPolicy::KeepFirstBySubject,
         },
         &sources,
         &query,
@@ -430,10 +460,13 @@ fn verification_rejects_hits_before_they_pollute_duplicate_tracking() {
     assert_eq!(trace.sources_visited, 2);
     assert_eq!(trace.hits_emitted, 1);
     assert_eq!(trace.duplicates_suppressed, 0);
+    assert_eq!(trace.hits_replaced, 0);
     assert_eq!(trace.hits_rejected, 1);
     assert_eq!(trace.stages[0].hits_emitted, 0);
+    assert_eq!(trace.stages[0].hits_replaced, 0);
     assert_eq!(trace.stages[0].hits_rejected, 1);
     assert_eq!(trace.stages[1].hits_emitted, 1);
+    assert_eq!(trace.stages[1].hits_replaced, 0);
     assert_eq!(trace.stages[1].hits_rejected, 0);
     assert_eq!(sink.len(), 1);
     assert_eq!(
@@ -471,7 +504,7 @@ fn suppressed_duplicates_do_not_count_toward_total_hit_stops() {
         RoutePolicy {
             stop_after_stage_hits: None,
             stop_after_total_hits: Some(2),
-            duplicate_policy: DuplicatePolicy::KeepFirstBySubject,
+            reconciliation_policy: ReconciliationPolicy::KeepFirstBySubject,
         },
         &sources,
         &query,
@@ -484,9 +517,11 @@ fn suppressed_duplicates_do_not_count_toward_total_hit_stops() {
     assert_eq!(trace.stages_visited, 2);
     assert_eq!(trace.hits_emitted, 2);
     assert_eq!(trace.duplicates_suppressed, 1);
+    assert_eq!(trace.hits_replaced, 0);
     assert_eq!(trace.hits_rejected, 0);
     assert_eq!(trace.stages[1].hits_emitted, 1);
     assert_eq!(trace.stages[1].duplicates_suppressed, 1);
+    assert_eq!(trace.stages[1].hits_replaced, 0);
     assert_eq!(
         trace.stop_reason,
         Some(portolan_observe::StopReason::TotalHitLimitReached {
@@ -496,4 +531,58 @@ fn suppressed_duplicates_do_not_count_toward_total_hit_stops() {
     );
     assert_eq!(sink.len(), 2);
     assert_eq!(sink.as_slice()[1].subject, DemoSubject("context.unique"));
+}
+
+#[test]
+fn keeps_higher_scoring_subject_when_requested() {
+    let index = test_index();
+    let leit = StagedLeitSource::new(LeitSource::new(
+        &index,
+        |doc_id| match doc_id {
+            1 => Some(DemoSubject("command.open_scene")),
+            2 => Some(DemoSubject("command.inspect_object")),
+            _ => None,
+        },
+        SearchScorer::bm25(),
+    ));
+    let better_context = BetterContextSource;
+    let sources: [(&str, &dyn StagedRetrievalSource<DemoSubject>); 2] = [
+        ("leit.materialized", &leit),
+        ("context.better", &better_context),
+    ];
+    let query = PortolanQuery::<(), ()>::text("open");
+    let router = RetrievalRouter::new();
+    let mut sink = CandidateBuffer::<DemoSubject>::new();
+
+    let trace = router.retrieve_traced_with_policy(
+        RoutePlan::standard(),
+        RoutePolicy {
+            stop_after_stage_hits: None,
+            stop_after_total_hits: None,
+            reconciliation_policy: ReconciliationPolicy::KeepBestByScore,
+        },
+        &sources,
+        &query,
+        &RetrievalContext::<(), (), (), ()>::default(),
+        RetrievalBudget::interactive_default(),
+        &mut sink,
+    );
+
+    assert_eq!(trace.sources_visited, 2);
+    assert_eq!(trace.stages_visited, 2);
+    assert_eq!(trace.hits_emitted, 1);
+    assert_eq!(trace.duplicates_suppressed, 0);
+    assert_eq!(trace.hits_replaced, 1);
+    assert_eq!(trace.hits_rejected, 0);
+    assert_eq!(trace.stages[0].hits_emitted, 1);
+    assert_eq!(trace.stages[0].hits_replaced, 0);
+    assert_eq!(trace.stages[1].hits_emitted, 0);
+    assert_eq!(trace.stages[1].hits_replaced, 1);
+    assert_eq!(sink.len(), 1);
+    assert_eq!(
+        sink.as_slice()[0].subject,
+        DemoSubject("command.open_scene")
+    );
+    assert_eq!(sink.as_slice()[0].origin, RetrievalOrigin::ContextCache);
+    assert_eq!(sink.as_slice()[0].score, Score::new(1.80));
 }

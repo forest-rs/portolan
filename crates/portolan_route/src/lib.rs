@@ -7,7 +7,8 @@
 //! - sources declare a stage
 //! - a route plan picks stage order
 //! - the router executes sources stage by stage into a caller sink
-//! - optional stop, dedup, and verification policies keep the work budgeted and explicit
+//! - optional stop, reconciliation, and verification policies keep the work
+//!   budgeted and explicit
 
 #![no_std]
 
@@ -16,7 +17,9 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use portolan_core::{PortolanHit, RetrievalBudget, RetrievalContext, SubjectRef};
+use alloc::vec::Vec;
+
+use portolan_core::{PortolanHit, RetrievalBudget, RetrievalContext, Score, SubjectRef};
 use portolan_observe::{RetrievalTrace, StopReason};
 use portolan_query::PortolanQuery;
 use portolan_source::{CandidateSink, RetrievalSource};
@@ -39,10 +42,12 @@ pub struct RouteStats {
     pub sources_visited: u32,
     /// Number of stages entered.
     pub stages_visited: u32,
-    /// Number of emitted hits.
+    /// Number of retained hits emitted to the caller sink.
     pub hits_emitted: u32,
-    /// Number of duplicate hits suppressed before reaching the caller sink.
+    /// Number of same-subject hits suppressed before reaching the caller sink.
     pub duplicates_suppressed: u32,
+    /// Number of retained hits replaced during same-subject reconciliation.
+    pub hits_replaced: u32,
     /// Number of hits rejected by verification before reaching the caller sink.
     pub hits_rejected: u32,
     /// Reason retrieval stopped early, when applicable.
@@ -113,25 +118,27 @@ where
     }
 }
 
-/// Policy controlling how routed retrieval handles repeated subjects.
+/// Policy controlling how routed retrieval reconciles repeated subjects.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum DuplicatePolicy {
+pub enum ReconciliationPolicy {
     /// Retain every hit, even when multiple sources emit the same subject.
     #[default]
     RetainAll,
-    /// Keep the first retained hit for each subject and suppress later duplicates.
+    /// Keep the first retained hit for each subject and suppress later ones.
     KeepFirstBySubject,
+    /// Keep the highest-scoring retained hit for each subject.
+    KeepBestByScore,
 }
 
 /// Explicit policy controlling when routing may stop before exhausting the plan.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RoutePolicy {
-    /// Stop after any stage emits at least this many hits.
+    /// Stop after any stage emits at least this many retained hits.
     pub stop_after_stage_hits: Option<u32>,
-    /// Stop after total emitted hits reach at least this many hits.
+    /// Stop after total retained hits reach at least this many hits.
     pub stop_after_total_hits: Option<u32>,
-    /// Policy for handling repeated subjects emitted by multiple sources.
-    pub duplicate_policy: DuplicatePolicy,
+    /// Policy for reconciling repeated subjects emitted by multiple sources.
+    pub reconciliation_policy: ReconciliationPolicy,
 }
 
 impl RoutePolicy {
@@ -140,7 +147,7 @@ impl RoutePolicy {
         Self {
             stop_after_stage_hits: None,
             stop_after_total_hits: None,
-            duplicate_policy: DuplicatePolicy::RetainAll,
+            reconciliation_policy: ReconciliationPolicy::RetainAll,
         }
     }
 }
@@ -465,7 +472,7 @@ impl RetrievalRouter {
     where
         Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
     {
-        let source_refs: alloc::vec::Vec<_> = sources.iter().map(|(_, source)| *source).collect();
+        let source_refs: Vec<_> = sources.iter().map(|(_, source)| *source).collect();
         let mut trace = RetrievalTrace::new(query.raw.clone(), budget);
         let _ = Self::route(
             plan,
@@ -496,14 +503,16 @@ impl RetrievalRouter {
         Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
     {
         let mut stats = RouteStats::default();
-        let mut seen_subjects = alloc::vec::Vec::new();
+        let mut retained = RetainedHits::new();
 
         for stage in plan.stages() {
             let mut visited_this_stage = false;
             let mut stage_sources_visited = 0_u32;
             let stage_hit_base = stats.hits_emitted;
             let stage_duplicate_base = stats.duplicates_suppressed;
+            let stage_replace_base = stats.hits_replaced;
             let stage_rejected_base = stats.hits_rejected;
+
             for (source_index, source) in sources.iter().enumerate() {
                 if source.stage() != *stage {
                     continue;
@@ -515,12 +524,12 @@ impl RetrievalRouter {
                 if let Some((trace, labeled_sources)) = &mut trace {
                     trace.record_visit(*stage, labeled_sources[source_index].0);
                 }
+
                 let mut routing_sink = RoutingSink::new(
-                    out,
+                    &mut retained,
                     context,
                     verifier,
-                    policy.duplicate_policy,
-                    &mut seen_subjects,
+                    policy.reconciliation_policy,
                 );
                 source.retrieve_into(query, context, budget, &mut routing_sink);
                 stats.hits_emitted = stats
@@ -531,6 +540,10 @@ impl RetrievalRouter {
                     .duplicates_suppressed
                     .checked_add(routing_sink.duplicates_suppressed())
                     .expect("route duplicate suppression count overflow");
+                stats.hits_replaced = stats
+                    .hits_replaced
+                    .checked_add(routing_sink.hits_replaced())
+                    .expect("route replacement count overflow");
                 stats.hits_rejected = stats
                     .hits_rejected
                     .checked_add(routing_sink.hits_rejected())
@@ -541,6 +554,7 @@ impl RetrievalRouter {
                 let stage_hits_emitted = stats.hits_emitted - stage_hit_base;
                 let stage_duplicates_suppressed =
                     stats.duplicates_suppressed - stage_duplicate_base;
+                let stage_hits_replaced = stats.hits_replaced - stage_replace_base;
                 let stage_hits_rejected = stats.hits_rejected - stage_rejected_base;
                 stats.stages_visited = stats
                     .stages_visited
@@ -552,6 +566,7 @@ impl RetrievalRouter {
                         stage_sources_visited,
                         stage_hits_emitted,
                         stage_duplicates_suppressed,
+                        stage_hits_replaced,
                         stage_hits_rejected,
                     );
                 }
@@ -566,6 +581,10 @@ impl RetrievalRouter {
                     break;
                 }
             }
+        }
+
+        for hit in retained.into_hits() {
+            out.push(hit);
         }
 
         stats
@@ -599,14 +618,56 @@ fn stop_reason_for_stage(
     None
 }
 
+struct RetainedHits<S: SubjectRef, A, E> {
+    hits: Vec<PortolanHit<S, A, E>>,
+    subject_slots: Vec<(S, usize)>,
+}
+
+impl<S: SubjectRef, A, E> RetainedHits<S, A, E> {
+    fn new() -> Self {
+        Self {
+            hits: Vec::new(),
+            subject_slots: Vec::new(),
+        }
+    }
+
+    fn subject_index(&self, subject: &S) -> Option<usize> {
+        self.subject_slots.iter().find_map(|(candidate, index)| {
+            if candidate == subject {
+                Some(*index)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn retain(&mut self, hit: PortolanHit<S, A, E>) {
+        let slot = self.hits.len();
+        self.subject_slots.push((hit.subject.clone(), slot));
+        self.hits.push(hit);
+    }
+
+    fn replace(&mut self, index: usize, hit: PortolanHit<S, A, E>) {
+        self.hits[index] = hit;
+    }
+
+    fn existing_score(&self, index: usize) -> Score {
+        self.hits[index].score
+    }
+
+    fn into_hits(self) -> Vec<PortolanHit<S, A, E>> {
+        self.hits
+    }
+}
+
 struct RoutingSink<'a, S: SubjectRef, Selection, Focus, View, Recent, A, E, Verifier> {
-    inner: &'a mut dyn CandidateSink<S, A, E>,
+    retained: &'a mut RetainedHits<S, A, E>,
     context: &'a RetrievalContext<Selection, Focus, View, Recent>,
     verifier: &'a Verifier,
-    duplicate_policy: DuplicatePolicy,
-    seen_subjects: &'a mut alloc::vec::Vec<S>,
+    reconciliation_policy: ReconciliationPolicy,
     hits_emitted: u32,
     duplicates_suppressed: u32,
+    hits_replaced: u32,
     hits_rejected: u32,
 }
 
@@ -616,20 +677,19 @@ where
     Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
 {
     fn new(
-        inner: &'a mut dyn CandidateSink<S, A, E>,
+        retained: &'a mut RetainedHits<S, A, E>,
         context: &'a RetrievalContext<Selection, Focus, View, Recent>,
         verifier: &'a Verifier,
-        duplicate_policy: DuplicatePolicy,
-        seen_subjects: &'a mut alloc::vec::Vec<S>,
+        reconciliation_policy: ReconciliationPolicy,
     ) -> Self {
         Self {
-            inner,
+            retained,
             context,
             verifier,
-            duplicate_policy,
-            seen_subjects,
+            reconciliation_policy,
             hits_emitted: 0,
             duplicates_suppressed: 0,
+            hits_replaced: 0,
             hits_rejected: 0,
         }
     }
@@ -640,6 +700,10 @@ where
 
     fn duplicates_suppressed(&self) -> u32 {
         self.duplicates_suppressed
+    }
+
+    fn hits_replaced(&self) -> u32 {
+        self.hits_replaced
     }
 
     fn hits_rejected(&self) -> u32 {
@@ -664,24 +728,52 @@ where
             return;
         }
 
-        if matches!(self.duplicate_policy, DuplicatePolicy::KeepFirstBySubject)
-            && self.seen_subjects.iter().any(|seen| seen == &hit.subject)
-        {
-            self.duplicates_suppressed = self
-                .duplicates_suppressed
-                .checked_add(1)
-                .expect("counting sink duplicate suppression overflow");
-            return;
-        }
+        match self.reconciliation_policy {
+            ReconciliationPolicy::RetainAll => {
+                self.retained.retain(hit);
+                self.hits_emitted = self
+                    .hits_emitted
+                    .checked_add(1)
+                    .expect("counting sink hit count overflow");
+            }
+            ReconciliationPolicy::KeepFirstBySubject => {
+                if self.retained.subject_index(&hit.subject).is_some() {
+                    self.duplicates_suppressed = self
+                        .duplicates_suppressed
+                        .checked_add(1)
+                        .expect("counting sink duplicate suppression overflow");
+                    return;
+                }
 
-        if matches!(self.duplicate_policy, DuplicatePolicy::KeepFirstBySubject) {
-            self.seen_subjects.push(hit.subject.clone());
-        }
+                self.retained.retain(hit);
+                self.hits_emitted = self
+                    .hits_emitted
+                    .checked_add(1)
+                    .expect("counting sink hit count overflow");
+            }
+            ReconciliationPolicy::KeepBestByScore => {
+                if let Some(index) = self.retained.subject_index(&hit.subject) {
+                    if hit.score > self.retained.existing_score(index) {
+                        self.retained.replace(index, hit);
+                        self.hits_replaced = self
+                            .hits_replaced
+                            .checked_add(1)
+                            .expect("counting sink replacement overflow");
+                    } else {
+                        self.duplicates_suppressed = self
+                            .duplicates_suppressed
+                            .checked_add(1)
+                            .expect("counting sink duplicate suppression overflow");
+                    }
+                    return;
+                }
 
-        self.hits_emitted = self
-            .hits_emitted
-            .checked_add(1)
-            .expect("counting sink hit count overflow");
-        self.inner.push(hit);
+                self.retained.retain(hit);
+                self.hits_emitted = self
+                    .hits_emitted
+                    .checked_add(1)
+                    .expect("counting sink hit count overflow");
+            }
+        }
     }
 }

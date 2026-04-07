@@ -17,7 +17,7 @@ use portolan_ingest::{FieldAlias, build_leit_index};
 use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{
-    DuplicatePolicy, HitVerifier, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage,
+    HitVerifier, ReconciliationPolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage,
     StagedRetrievalSource, VerificationOutcome,
 };
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
@@ -506,7 +506,7 @@ impl<'a> CommandPalette<'a> {
             policy: RoutePolicy {
                 stop_after_stage_hits: None,
                 stop_after_total_hits: Some(3),
-                duplicate_policy: DuplicatePolicy::KeepFirstBySubject,
+                reconciliation_policy: ReconciliationPolicy::KeepFirstBySubject,
             },
             sources,
             catalog,
@@ -759,7 +759,7 @@ fn main() {
         stage_label(RoutePlan::standard().stages()[2])
     );
     println!("   stop policy: stop after 3 total hits");
-    println!("   duplicate policy: keep first hit per subject");
+    println!("   reconciliation policy: keep first hit per subject");
     println!("   verification: reject hits that are no longer present in host truth");
     println!();
 
@@ -784,11 +784,12 @@ fn main() {
     println!("   stage summary:");
     for stage in &response.trace.stages {
         println!(
-            "     - stage={} sources={} hits={} duplicates_suppressed={} hits_rejected={}",
+            "     - stage={} sources={} hits={} duplicates_suppressed={} hits_replaced={} hits_rejected={}",
             stage_label(stage.stage),
             stage.sources_visited,
             stage.hits_emitted,
             stage.duplicates_suppressed,
+            stage.hits_replaced,
             stage.hits_rejected
         );
     }
@@ -802,6 +803,12 @@ fn main() {
         println!(
             "   hits rejected by verification: {}",
             response.trace.hits_rejected
+        );
+    }
+    if response.trace.hits_replaced > 0 {
+        println!(
+            "   hits replaced during reconciliation: {}",
+            response.trace.hits_replaced
         );
     }
     if let Some(stop_reason) = &response.trace.stop_reason {
