@@ -78,6 +78,23 @@ pub struct Evidence<K = ()> {
     pub kind: K,
 }
 
+impl<K> Evidence<K> {
+    /// Create a new evidence record with no associated field.
+    pub const fn new(contribution: Score, kind: K) -> Self {
+        Self {
+            field: None,
+            contribution,
+            kind,
+        }
+    }
+
+    /// Attach a field to this evidence record.
+    pub const fn with_field(mut self, field: FieldId) -> Self {
+        self.field = Some(field);
+        self
+    }
+}
+
 /// Describes where a hit originated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RetrievalOrigin {
@@ -106,6 +123,36 @@ pub struct PortolanHit<S: SubjectRef, A = StandardAffordance, E = ()> {
     pub affordances: Vec<Affordance<A>>,
     /// Origin of the hit.
     pub origin: RetrievalOrigin,
+}
+
+impl<S: SubjectRef, A, E> PortolanHit<S, A, E> {
+    /// Create a hit with no evidence or affordances.
+    pub fn new(subject: S, score: Score, origin: RetrievalOrigin) -> Self {
+        Self {
+            subject,
+            score,
+            evidence: Vec::new(),
+            affordances: Vec::new(),
+            origin,
+        }
+    }
+
+    /// Replace the affordances attached to this hit.
+    pub fn with_affordances(mut self, affordances: Vec<Affordance<A>>) -> Self {
+        self.affordances = affordances;
+        self
+    }
+
+    /// Replace the evidence attached to this hit.
+    pub fn with_evidence(mut self, evidence: Vec<Evidence<E>>) -> Self {
+        self.evidence = evidence;
+        self
+    }
+
+    /// Append one evidence record.
+    pub fn push_evidence(&mut self, evidence: Evidence<E>) {
+        self.evidence.push(evidence);
+    }
 }
 
 /// Explicit retrieval work budget.

@@ -7,8 +7,7 @@ use leit_core::FieldId;
 use leit_index::SearchScorer;
 use leit_text::{Analyzer, FieldAnalyzers, UnicodeNormalizer, WhitespaceTokenizer};
 use portolan_core::{
-    Affordance, Evidence, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin,
-    StandardAffordance,
+    Affordance, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin, StandardAffordance,
 };
 use portolan_ingest::{FieldAlias, build_leit_index};
 use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
@@ -35,21 +34,6 @@ struct CommandMetadata {
     title: &'static str,
 }
 
-type DemoLeitSource<'a> = LeitSource<
-    'a,
-    CatalogSubjectMapper<'a, DemoSubject, StandardAffordance, CommandMetadata>,
-    portolan_leit::TextQueryLowerer,
-    CatalogHitEnricher<
-        'a,
-        DemoSubject,
-        StandardAffordance,
-        CommandMetadata,
-        fn(
-            &SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>,
-            leit_core::Score,
-        ) -> Option<Evidence<&'static str>>,
-    >,
->;
 type DemoSourceRef<'a> = &'a dyn StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>;
 type LabeledDemoSource<'a> = (&'a str, DemoSourceRef<'a>);
 
@@ -93,13 +77,14 @@ impl RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'
         };
 
         if should_match {
-            out.push(PortolanHit {
-                subject: DemoSubject::Recent("recent.scene"),
-                score: leit_core::Score::new(0.2),
-                evidence: Vec::new(),
-                affordances: vec![Affordance::new(StandardAffordance::Open)],
-                origin: RetrievalOrigin::ContextCache,
-            });
+            out.push(
+                PortolanHit::new(
+                    DemoSubject::Recent("recent.scene"),
+                    leit_core::Score::new(0.2),
+                    RetrievalOrigin::ContextCache,
+                )
+                .with_affordances(vec![Affordance::new(StandardAffordance::Open)]),
+            );
         }
     }
 }
@@ -112,18 +97,20 @@ impl StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordan
     }
 }
 
-struct MaterializedSource<'a> {
-    inner: DemoLeitSource<'a>,
+struct MaterializedSource<Inner> {
+    inner: Inner,
 }
 
-impl<'a> MaterializedSource<'a> {
-    fn new(inner: DemoLeitSource<'a>) -> Self {
+impl<Inner> MaterializedSource<Inner> {
+    fn new(inner: Inner) -> Self {
         Self { inner }
     }
 }
 
-impl RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
-    for MaterializedSource<'_>
+impl<Inner> RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+    for MaterializedSource<Inner>
+where
+    Inner: RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>,
 {
     fn retrieve_into(
         &self,
@@ -136,8 +123,11 @@ impl RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'
     }
 }
 
-impl StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
-    for MaterializedSource<'_>
+impl<Inner>
+    StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+    for MaterializedSource<Inner>
+where
+    Inner: RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>,
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Materialized
@@ -190,20 +180,6 @@ fn analyzers() -> FieldAnalyzers {
         Analyzer::new(WhitespaceTokenizer::new()).with_normalizer(UnicodeNormalizer::new());
     analyzers.set(FieldId::new(2), analyzer);
     analyzers
-}
-
-fn projection_evidence(
-    projection: &SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>,
-    score: leit_core::Score,
-) -> Option<Evidence<&'static str>> {
-    Some(Evidence {
-        field: projection
-            .materialized_fields
-            .first()
-            .map(|field| field.field),
-        contribution: score,
-        kind: "title_projection",
-    })
 }
 
 fn main() {
@@ -260,7 +236,7 @@ fn main() {
             SearchScorer::bm25(),
         )
         .with_enricher(
-            CatalogHitEnricher::new(&catalog).with_evidence_builder(projection_evidence),
+            CatalogHitEnricher::new(&catalog).with_first_field_evidence("title_projection"),
         ),
     );
     let contextual = ContextSource;

@@ -121,11 +121,7 @@ fn routes_materialized_sources_before_contextual_sources() {
         )
         .with_enricher(|doc_id, hit: &mut PortolanHit<DemoSubject>| {
             hit.affordances = vec![Affordance::new(StandardAffordance::Execute)];
-            hit.evidence.push(Evidence {
-                field: Some(FieldId::new(1)),
-                contribution: hit.score,
-                kind: (),
-            });
+            hit.push_evidence(Evidence::new(hit.score, ()).with_field(FieldId::new(1)));
             if doc_id == 1 {
                 hit.origin = RetrievalOrigin::Derived;
             }

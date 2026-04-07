@@ -14,7 +14,7 @@ use portolan_core::{
     RetrievalOrigin, StandardAffordance,
 };
 use portolan_ingest::{FieldAlias, build_leit_index};
-use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource, TextQueryLowerer};
+use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource};
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
@@ -80,22 +80,6 @@ type PaletteSourceRef<'a> = &'a dyn StagedRetrievalSource<
     PaletteEvidence,
 >;
 type LabeledPaletteSource<'a> = (&'a str, PaletteSourceRef<'a>);
-type MaterializedPaletteSource<'a> = LeitSource<
-    'a,
-    CatalogSubjectMapper<'a, PaletteSubject, StandardAffordance, CommandMetadata>,
-    TextQueryLowerer,
-    CatalogHitEnricher<
-        'a,
-        PaletteSubject,
-        StandardAffordance,
-        CommandMetadata,
-        fn(
-            &SubjectProjection<PaletteSubject, StandardAffordance, CommandMetadata>,
-            Score,
-        ) -> Option<Evidence<PaletteEvidence>>,
-    >,
->;
-
 #[derive(Clone, Debug)]
 struct PaletteAction {
     label: &'static str,
@@ -231,20 +215,18 @@ impl
             }
 
             emitted += 1;
-            out.push(PortolanHit {
-                subject: PaletteSubject::Recent(entry.id),
-                score: Score::new(0.45),
-                evidence: vec![Evidence {
-                    field: None,
-                    contribution: Score::new(0.45),
-                    kind: "recent_history",
-                }],
-                affordances: vec![
+            out.push(
+                PortolanHit::new(
+                    PaletteSubject::Recent(entry.id),
+                    Score::new(0.45),
+                    RetrievalOrigin::ContextCache,
+                )
+                .with_evidence(vec![Evidence::new(Score::new(0.45), "recent_history")])
+                .with_affordances(vec![
                     Affordance::new(StandardAffordance::Open),
                     Affordance::new(StandardAffordance::RefineQuery),
-                ],
-                origin: RetrievalOrigin::ContextCache,
-            });
+                ]),
+            );
         }
     }
 }
@@ -313,20 +295,18 @@ impl
             }
 
             emitted += 1;
-            out.push(PortolanHit {
-                subject: PaletteSubject::Object(object.id),
-                score: Score::new(0.30),
-                evidence: vec![Evidence {
-                    field: None,
-                    contribution: Score::new(0.30),
-                    kind: "visible_object",
-                }],
-                affordances: vec![
+            out.push(
+                PortolanHit::new(
+                    PaletteSubject::Object(object.id),
+                    Score::new(0.30),
+                    RetrievalOrigin::VirtualScan,
+                )
+                .with_evidence(vec![Evidence::new(Score::new(0.30), "visible_object")])
+                .with_affordances(vec![
                     Affordance::new(StandardAffordance::Focus),
                     Affordance::new(StandardAffordance::Inspect),
-                ],
-                origin: RetrievalOrigin::VirtualScan,
-            });
+                ]),
+            );
         }
     }
 }
@@ -349,17 +329,17 @@ impl
     }
 }
 
-struct MaterializedSource<'a> {
-    inner: MaterializedPaletteSource<'a>,
+struct MaterializedSource<Inner> {
+    inner: Inner,
 }
 
-impl<'a> MaterializedSource<'a> {
-    fn new(inner: MaterializedPaletteSource<'a>) -> Self {
+impl<Inner> MaterializedSource<Inner> {
+    fn new(inner: Inner) -> Self {
         Self { inner }
     }
 }
 
-impl
+impl<Inner>
     RetrievalSource<
         PaletteSubject,
         (),
@@ -370,7 +350,19 @@ impl
         PaletteRecent,
         StandardAffordance,
         PaletteEvidence,
-    > for MaterializedSource<'_>
+    > for MaterializedSource<Inner>
+where
+    Inner: RetrievalSource<
+            PaletteSubject,
+            (),
+            (),
+            (),
+            (),
+            PaletteView,
+            PaletteRecent,
+            StandardAffordance,
+            PaletteEvidence,
+        >,
 {
     fn retrieve_into(
         &self,
@@ -383,7 +375,7 @@ impl
     }
 }
 
-impl
+impl<Inner>
     StagedRetrievalSource<
         PaletteSubject,
         (),
@@ -394,7 +386,19 @@ impl
         PaletteRecent,
         StandardAffordance,
         PaletteEvidence,
-    > for MaterializedSource<'_>
+    > for MaterializedSource<Inner>
+where
+    Inner: RetrievalSource<
+            PaletteSubject,
+            (),
+            (),
+            (),
+            (),
+            PaletteView,
+            PaletteRecent,
+            StandardAffordance,
+            PaletteEvidence,
+        >,
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Materialized
@@ -537,20 +541,6 @@ fn analyzers() -> FieldAnalyzers {
     analyzers
 }
 
-fn projection_evidence(
-    projection: &SubjectProjection<PaletteSubject, StandardAffordance, CommandMetadata>,
-    score: Score,
-) -> Option<Evidence<PaletteEvidence>> {
-    Some(Evidence {
-        field: projection
-            .materialized_fields
-            .first()
-            .map(|field| field.field),
-        contribution: score,
-        kind: "command_projection",
-    })
-}
-
 fn stage_label(stage: RouteStage) -> &'static str {
     match stage {
         RouteStage::Materialized => "materialized",
@@ -611,7 +601,7 @@ fn main() {
             SearchScorer::bm25(),
         )
         .with_enricher(
-            CatalogHitEnricher::new(&catalog).with_evidence_builder(projection_evidence),
+            CatalogHitEnricher::new(&catalog).with_first_field_evidence("command_projection"),
         ),
     );
     let recent = RecentSource;

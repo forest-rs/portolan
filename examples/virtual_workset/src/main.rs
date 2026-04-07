@@ -13,7 +13,7 @@ use portolan_core::{
     StandardAffordance,
 };
 use portolan_ingest::{FieldAlias, build_leit_index};
-use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource, TextQueryLowerer};
+use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
@@ -119,20 +119,18 @@ impl
             }
 
             matches += 1;
-            out.push(PortolanHit {
-                subject: DemoSubject::Entity(entity.id),
-                score: Score::new(0.35),
-                evidence: vec![Evidence {
-                    field: None,
-                    contribution: Score::new(0.35),
-                    kind: "visible_label_scan",
-                }],
-                affordances: vec![
+            out.push(
+                PortolanHit::new(
+                    DemoSubject::Entity(entity.id),
+                    Score::new(0.35),
+                    RetrievalOrigin::VirtualScan,
+                )
+                .with_evidence(vec![Evidence::new(Score::new(0.35), "visible_label_scan")])
+                .with_affordances(vec![
                     Affordance::new(StandardAffordance::Focus),
                     Affordance::new(StandardAffordance::Inspect),
-                ],
-                origin: RetrievalOrigin::VirtualScan,
-            });
+                ]),
+            );
         }
     }
 }
@@ -155,33 +153,17 @@ impl
     }
 }
 
-type MaterializedLeitSource<'a> = LeitSource<
-    'a,
-    CatalogSubjectMapper<'a, DemoSubject, StandardAffordance, CommandMetadata>,
-    TextQueryLowerer,
-    CatalogHitEnricher<
-        'a,
-        DemoSubject,
-        StandardAffordance,
-        CommandMetadata,
-        fn(
-            &SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>,
-            Score,
-        ) -> Option<Evidence<DemoEvidence>>,
-    >,
->;
-
-struct MaterializedSource<'a> {
-    inner: MaterializedLeitSource<'a>,
+struct MaterializedSource<Inner> {
+    inner: Inner,
 }
 
-impl<'a> MaterializedSource<'a> {
-    fn new(inner: MaterializedLeitSource<'a>) -> Self {
+impl<Inner> MaterializedSource<Inner> {
+    fn new(inner: Inner) -> Self {
         Self { inner }
     }
 }
 
-impl
+impl<Inner>
     RetrievalSource<
         DemoSubject,
         (),
@@ -192,7 +174,19 @@ impl
         (),
         StandardAffordance,
         DemoEvidence,
-    > for MaterializedSource<'_>
+    > for MaterializedSource<Inner>
+where
+    Inner: RetrievalSource<
+            DemoSubject,
+            (),
+            (),
+            (),
+            (),
+            VisibleWorkset,
+            (),
+            StandardAffordance,
+            DemoEvidence,
+        >,
 {
     fn retrieve_into(
         &self,
@@ -205,7 +199,7 @@ impl
     }
 }
 
-impl
+impl<Inner>
     StagedRetrievalSource<
         DemoSubject,
         (),
@@ -216,7 +210,19 @@ impl
         (),
         StandardAffordance,
         DemoEvidence,
-    > for MaterializedSource<'_>
+    > for MaterializedSource<Inner>
+where
+    Inner: RetrievalSource<
+            DemoSubject,
+            (),
+            (),
+            (),
+            (),
+            VisibleWorkset,
+            (),
+            StandardAffordance,
+            DemoEvidence,
+        >,
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Materialized
@@ -231,20 +237,6 @@ fn analyzers() -> FieldAnalyzers {
         Analyzer::new(WhitespaceTokenizer::new()).with_normalizer(UnicodeNormalizer::new());
     analyzers.set(FieldId::new(2), description);
     analyzers
-}
-
-fn projection_evidence(
-    projection: &SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>,
-    score: Score,
-) -> Option<Evidence<DemoEvidence>> {
-    Some(Evidence {
-        field: projection
-            .materialized_fields
-            .first()
-            .map(|field| field.field),
-        contribution: score,
-        kind: "materialized_projection",
-    })
 }
 
 fn stage_label(stage: RouteStage) -> &'static str {
@@ -316,7 +308,7 @@ fn main() {
             SearchScorer::bm25(),
         )
         .with_enricher(
-            CatalogHitEnricher::new(&catalog).with_evidence_builder(projection_evidence),
+            CatalogHitEnricher::new(&catalog).with_first_field_evidence("materialized_projection"),
         ),
     );
     let virtual_workset = VisibleWorksetSource;

@@ -16,13 +16,11 @@ extern crate alloc;
 extern crate std;
 
 use alloc::string::String;
-use alloc::vec::Vec;
 use core::cell::RefCell;
 
 use leit_index::{ExecutionWorkspace, InMemoryIndex, SearchScorer};
 use portolan_core::{
-    Affordance, Evidence, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin, Score,
-    SubjectRef,
+    Evidence, PortolanHit, RetrievalBudget, RetrievalContext, RetrievalOrigin, Score, SubjectRef,
 };
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_schema::{ProjectionCatalog, SubjectProjection};
@@ -123,6 +121,36 @@ where
     }
 }
 
+/// Evidence builder that reports the first projected materialized field.
+#[derive(Clone, Debug)]
+pub struct FirstFieldEvidence<E> {
+    kind: E,
+}
+
+impl<E> FirstFieldEvidence<E> {
+    /// Create a first-field evidence builder with a fixed evidence kind.
+    pub const fn new(kind: E) -> Self {
+        Self { kind }
+    }
+}
+
+impl<S, A, M, E> ProjectionEvidenceBuilder<S, A, M, E> for FirstFieldEvidence<E>
+where
+    S: SubjectRef,
+    E: Clone,
+{
+    fn build_evidence(
+        &self,
+        projection: &SubjectProjection<S, A, M>,
+        score: Score,
+    ) -> Option<Evidence<E>> {
+        Some(
+            Evidence::new(score, self.kind.clone())
+                .with_field(projection.materialized_fields.first()?.field),
+        )
+    }
+}
+
 /// Evidence builder that leaves catalog-backed hits unchanged.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoopProjectionEvidence;
@@ -157,6 +185,14 @@ impl<'a, S: SubjectRef, A, M> CatalogHitEnricher<'a, S, A, M, NoopProjectionEvid
             catalog,
             evidence_builder: NoopProjectionEvidence,
         }
+    }
+
+    /// Attach evidence based on the first materialized field in each projection.
+    pub fn with_first_field_evidence<E: Clone>(
+        self,
+        kind: E,
+    ) -> CatalogHitEnricher<'a, S, A, M, FirstFieldEvidence<E>> {
+        self.with_evidence_builder(FirstFieldEvidence::new(kind))
     }
 }
 
@@ -281,13 +317,8 @@ where
         {
             for hit in hits {
                 if let Some(subject) = self.mapper.map_subject(hit.id) {
-                    let mut portolan_hit = PortolanHit {
-                        subject,
-                        score: hit.score,
-                        evidence: Vec::new(),
-                        affordances: Vec::<Affordance<A>>::new(),
-                        origin: RetrievalOrigin::MaterializedIndex,
-                    };
+                    let mut portolan_hit =
+                        PortolanHit::new(subject, hit.score, RetrievalOrigin::MaterializedIndex);
                     self.enricher.enrich_hit(hit.id, &mut portolan_hit);
                     out.push(portolan_hit);
                 }
@@ -299,14 +330,15 @@ where
 #[cfg(test)]
 mod tests {
     use alloc::vec;
-    use alloc::vec::Vec;
 
     use portolan_core::{
-        Affordance, Evidence, FieldId, PortolanHit, RetrievalOrigin, Score, StandardAffordance,
+        Affordance, FieldId, PortolanHit, RetrievalOrigin, Score, StandardAffordance,
     };
     use portolan_schema::{MaterializedField, ProjectionCatalog, SubjectProjection};
 
-    use super::{CatalogHitEnricher, CatalogSubjectMapper, HitEnricher, SubjectMapper};
+    use super::{
+        CatalogHitEnricher, CatalogSubjectMapper, FirstFieldEvidence, HitEnricher, SubjectMapper,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     struct DemoSubject(&'static str);
@@ -320,27 +352,16 @@ mod tests {
         .with_affordances(vec![Affordance::new(StandardAffordance::Open)])]);
 
         let mapper = CatalogSubjectMapper::new(&catalog);
-        let mut hit = PortolanHit {
-            subject: mapper
+        let mut hit = PortolanHit::new(
+            mapper
                 .map_subject(1)
                 .expect("projection catalog should map subject"),
-            score: Score::new(1.5),
-            evidence: Vec::new(),
-            affordances: Vec::new(),
-            origin: RetrievalOrigin::MaterializedIndex,
-        };
+            Score::new(1.5),
+            RetrievalOrigin::MaterializedIndex,
+        );
 
         CatalogHitEnricher::new(&catalog)
-            .with_evidence_builder(|projection: &SubjectProjection<DemoSubject>, score| {
-                Some(Evidence {
-                    field: projection
-                        .materialized_fields
-                        .first()
-                        .map(|field| field.field),
-                    contribution: score,
-                    kind: "projection",
-                })
-            })
+            .with_evidence_builder(FirstFieldEvidence::new("projection"))
             .enrich_hit(1, &mut hit);
 
         assert_eq!(
