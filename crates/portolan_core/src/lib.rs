@@ -1,0 +1,161 @@
+// Copyright 2026 the Portolan Authors
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+//! Core types and traits for Portolan structured retrieval.
+//!
+//! This crate provides the calm vocabulary used across the Portolan family:
+//! - host-defined subject bounds
+//! - typed retrieval hits
+//! - evidence and provenance
+//! - affordance descriptors and resolution seams
+//! - retrieval context envelopes and budgets
+
+#![no_std]
+
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+use alloc::vec::Vec;
+use core::fmt;
+use core::hash::Hash;
+
+pub use leit_core::{FieldId, Score};
+
+/// Trait bound for host-defined retrievable subjects.
+///
+/// Portolan intentionally does not define one global subject enum.
+/// Hosts provide their own subject universe and thread it through the retrieval
+/// pipeline using this bound.
+pub trait SubjectRef: Clone + Eq + Hash + fmt::Debug {}
+
+impl<T> SubjectRef for T where T: Clone + Eq + Hash + fmt::Debug {}
+
+/// Built-in affordance kinds that Portolan understands semantically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StandardAffordance {
+    /// Execute the target subject.
+    Execute,
+    /// Open the target subject.
+    Open,
+    /// Move focus to the target subject.
+    Focus,
+    /// Inspect the target subject.
+    Inspect,
+    /// Reveal the target subject in a larger structure.
+    Reveal,
+    /// Toggle a state associated with the target subject.
+    Toggle,
+    /// Preview the target subject.
+    Preview,
+    /// Refine the current query using the target subject.
+    RefineQuery,
+}
+
+/// An affordance attached to a hit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Affordance<A = StandardAffordance> {
+    /// Host-defined affordance payload.
+    pub action: A,
+}
+
+impl<A> Affordance<A> {
+    /// Create a new affordance descriptor.
+    pub const fn new(action: A) -> Self {
+        Self { action }
+    }
+}
+
+/// Evidence explaining why a hit matched.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Evidence<K = ()> {
+    /// Field associated with this evidence when known.
+    pub field: Option<FieldId>,
+    /// Score contribution attributed to this evidence.
+    pub contribution: Score,
+    /// Host-defined evidence classification.
+    pub kind: K,
+}
+
+/// Describes where a hit originated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RetrievalOrigin {
+    /// A materialized retrieval engine such as a Leit index.
+    MaterializedIndex,
+    /// A host-maintained contextual cache.
+    ContextCache,
+    /// A visible or already-loaded working set.
+    VisibleWorkset,
+    /// An on-demand or virtual scan.
+    VirtualScan,
+    /// A derived hit synthesized from other data.
+    Derived,
+}
+
+/// A typed retrieval result.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PortolanHit<S: SubjectRef, A = StandardAffordance, E = ()> {
+    /// Host-defined subject identity.
+    pub subject: S,
+    /// Final score assigned to this hit.
+    pub score: Score,
+    /// Evidence explaining the match.
+    pub evidence: Vec<Evidence<E>>,
+    /// Supported actions for the subject.
+    pub affordances: Vec<Affordance<A>>,
+    /// Origin of the hit.
+    pub origin: RetrievalOrigin,
+}
+
+/// Explicit retrieval work budget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetrievalBudget {
+    /// Candidate cap per source.
+    pub max_candidates_per_source: u32,
+    /// Cap on virtual expansions.
+    pub max_virtual_expansions: u32,
+    /// Cap on scanned nodes.
+    pub max_nodes_scanned: u32,
+    /// Wall-clock work budget in microseconds.
+    pub max_time_us: u64,
+}
+
+impl RetrievalBudget {
+    /// A conservative small default budget for interactive use.
+    pub const fn interactive_default() -> Self {
+        Self {
+            max_candidates_per_source: 64,
+            max_virtual_expansions: 16,
+            max_nodes_scanned: 256,
+            max_time_us: 5_000,
+        }
+    }
+}
+
+/// Explicit retrieval context envelope.
+///
+/// Each field is host-defined to avoid hard-coding one application state model.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RetrievalContext<Selection = (), Focus = (), View = (), Recent = ()> {
+    /// Current selection snapshot.
+    pub selection: Option<Selection>,
+    /// Current focus snapshot.
+    pub focus: Option<Focus>,
+    /// Current visible view snapshot.
+    pub visible_view: Option<View>,
+    /// Recent interaction history.
+    pub recent: Option<Recent>,
+}
+
+/// Host-owned resolver for turning affordance descriptors into concrete actions.
+///
+/// Resolution is pure description lookup. Portolan does not execute the
+/// resolved action.
+pub trait AffordanceResolver<S: SubjectRef, A> {
+    /// Host-defined resolved action description.
+    type Resolved;
+
+    /// Resolve a hit affordance into a host action descriptor.
+    fn resolve(&self, subject: &S, affordance: &Affordance<A>) -> Option<Self::Resolved>;
+}

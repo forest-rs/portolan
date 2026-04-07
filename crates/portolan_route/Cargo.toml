@@ -1,0 +1,25 @@
+[package]
+name = "portolan_route"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Staged multi-source routing for Portolan retrieval"
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["portolan_core/std", "portolan_query/std", "portolan_source/std"]
+
+[dependencies]
+portolan_core = { workspace = true }
+portolan_query = { workspace = true }
+portolan_source = { workspace = true }
+
+[lints]
+workspace = true

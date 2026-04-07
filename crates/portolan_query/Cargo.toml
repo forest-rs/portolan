@@ -1,0 +1,26 @@
+[package]
+name = "portolan_query"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Small query model for Portolan retrieval"
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["portolan_core/std"]
+
+[dependencies]
+portolan_core = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

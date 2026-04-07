@@ -1,0 +1,31 @@
+[package]
+name = "portolan_leit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Leit-backed retrieval adapters for Portolan"
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "leit_index/std",
+    "portolan_core/std",
+    "portolan_query/std",
+    "portolan_source/std",
+]
+
+[dependencies]
+leit_index = { workspace = true }
+portolan_core = { workspace = true }
+portolan_query = { workspace = true }
+portolan_source = { workspace = true }
+
+[lints]
+workspace = true

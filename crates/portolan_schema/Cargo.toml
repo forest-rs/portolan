@@ -1,0 +1,24 @@
+[package]
+name = "portolan_schema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Subject projection records and materialized field contracts for Portolan"
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["portolan_core/std", "leit_core/std"]
+
+[dependencies]
+leit_core = { workspace = true }
+portolan_core = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "portolan_core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core types and traits for Portolan structured retrieval"
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["leit_core/std"]
+
+[dependencies]
+leit_core = { workspace = true }
+
+[lints]
+workspace = true

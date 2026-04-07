@@ -1,0 +1,24 @@
+[package]
+name = "portolan_source"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Source and sink traits for Portolan retrieval"
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["std"]
+std = ["portolan_core/std", "portolan_query/std"]
+
+[dependencies]
+portolan_core = { workspace = true }
+portolan_query = { workspace = true }
+
+[lints]
+workspace = true
