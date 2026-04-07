@@ -10,6 +10,7 @@ members = [
     "crates/portolan_schema",
     "crates/portolan_source",
     "examples/basic_routing",
+    "examples/command_palette",
     "examples/virtual_workset",
 ]
 resolver = "2"

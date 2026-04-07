@@ -50,6 +50,7 @@ Examples live in top-level workspace members so core crates stay free of extra
 dev-dependencies.
 
 - `examples/basic_routing`: Leit-backed plus contextual routing over projected subjects
+- `examples/command_palette`: a host-facing command palette API built on Portolan
 - `examples/virtual_workset`: Leit-backed plus visible-workset virtual retrieval
 
 ## Planned crates

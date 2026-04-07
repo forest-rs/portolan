@@ -1,0 +1,28 @@
+[package]
+name = "command_palette"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Example showing a host-facing command palette built on Portolan"
+readme = "README.md"
+publish = false
+
+[dependencies]
+leit_core = { workspace = true, features = ["std"] }
+leit_index = { workspace = true, features = ["std"] }
+leit_text = { workspace = true, features = ["std"] }
+portolan_core = { workspace = true, features = ["std"] }
+portolan_ingest = { workspace = true, features = ["std"] }
+portolan_leit = { workspace = true, features = ["std"] }
+portolan_observe = { workspace = true, features = ["std"] }
+portolan_query = { workspace = true, features = ["std"] }
+portolan_route = { workspace = true, features = ["std"] }
+portolan_schema = { workspace = true, features = ["std"] }
+portolan_source = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
