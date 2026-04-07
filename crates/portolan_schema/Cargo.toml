@@ -17,6 +17,7 @@ default = ["std"]
 std = ["portolan_core/std", "leit_core/std"]
 
 [dependencies]
+hashbrown = { default-features = false, features = ["default-hasher"], version = "0.16" }
 leit_core = { workspace = true }
 portolan_core = { workspace = true }
 

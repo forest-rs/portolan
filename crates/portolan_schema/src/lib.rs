@@ -17,6 +17,7 @@ extern crate std;
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use hashbrown::HashMap;
 
 use leit_core::FieldId;
 use portolan_core::{Affordance, StandardAffordance, SubjectRef};
@@ -87,4 +88,120 @@ impl<S: SubjectRef, A, M> SubjectProjection<S, A, M> {
 pub trait ProjectSubject<Host, S: SubjectRef, A = StandardAffordance, M = ()> {
     /// Create a retrievable projection from one host value.
     fn project(&self, value: &Host) -> SubjectProjection<S, A, M>;
+}
+
+/// Stable catalog of projections keyed by retrieval document ID.
+#[derive(Clone, Debug)]
+pub struct ProjectionCatalog<S: SubjectRef, A = StandardAffordance, M = ()> {
+    projections: Vec<SubjectProjection<S, A, M>>,
+    doc_ids_by_subject: HashMap<S, u32>,
+}
+
+impl<S: SubjectRef, A, M> Default for ProjectionCatalog<S, A, M> {
+    fn default() -> Self {
+        Self {
+            projections: Vec::new(),
+            doc_ids_by_subject: HashMap::new(),
+        }
+    }
+}
+
+impl<S: SubjectRef, A, M> ProjectionCatalog<S, A, M> {
+    /// Create an empty projection catalog.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Insert one projection and return its stable document ID.
+    pub fn insert(&mut self, projection: SubjectProjection<S, A, M>) -> u32 {
+        let doc_id =
+            u32::try_from(self.projections.len() + 1).expect("projection count should fit in u32");
+        self.doc_ids_by_subject
+            .insert(projection.subject.clone(), doc_id);
+        self.projections.push(projection);
+        doc_id
+    }
+
+    /// Build a catalog from an iterator of projections.
+    pub fn from_projections(
+        projections: impl IntoIterator<Item = SubjectProjection<S, A, M>>,
+    ) -> Self {
+        let mut catalog = Self::new();
+        for projection in projections {
+            let _ = catalog.insert(projection);
+        }
+        catalog
+    }
+
+    /// Number of stored projections.
+    pub fn len(&self) -> usize {
+        self.projections.len()
+    }
+
+    /// Whether the catalog contains no projections.
+    pub fn is_empty(&self) -> bool {
+        self.projections.is_empty()
+    }
+
+    /// Borrow the projection for one document ID.
+    pub fn projection(&self, doc_id: u32) -> Option<&SubjectProjection<S, A, M>> {
+        self.projections.get(doc_id.checked_sub(1)? as usize)
+    }
+
+    /// Borrow the subject for one document ID.
+    pub fn subject(&self, doc_id: u32) -> Option<&S> {
+        Some(&self.projection(doc_id)?.subject)
+    }
+
+    /// Look up the document ID for one subject.
+    pub fn doc_id_for_subject(&self, subject: &S) -> Option<u32> {
+        self.doc_ids_by_subject.get(subject).copied()
+    }
+
+    /// Iterate over projections with stable document IDs.
+    pub fn iter(&self) -> impl Iterator<Item = (u32, &SubjectProjection<S, A, M>)> {
+        self.projections
+            .iter()
+            .enumerate()
+            .map(|(index, projection)| {
+                (
+                    u32::try_from(index + 1).expect("projection index should fit in u32"),
+                    projection,
+                )
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use super::{ProjectionCatalog, SubjectProjection};
+    use leit_core::FieldId;
+    use portolan_core::StandardAffordance;
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    struct DemoSubject(&'static str);
+
+    #[test]
+    fn assigns_stable_doc_ids_and_supports_reverse_lookup() {
+        let mut catalog = ProjectionCatalog::<DemoSubject, StandardAffordance>::new();
+        let first = catalog.insert(SubjectProjection::new(
+            DemoSubject("command.open"),
+            vec![super::MaterializedField::new(FieldId::new(1), "Open")],
+        ));
+        let second = catalog.insert(SubjectProjection::new(
+            DemoSubject("command.inspect"),
+            vec![super::MaterializedField::new(FieldId::new(1), "Inspect")],
+        ));
+
+        assert_eq!(first, 1);
+        assert_eq!(second, 2);
+        assert_eq!(catalog.subject(1), Some(&DemoSubject("command.open")));
+        assert_eq!(
+            catalog.doc_id_for_subject(&DemoSubject("command.inspect")),
+            Some(2)
+        );
+        assert_eq!(catalog.len(), 2);
+    }
 }

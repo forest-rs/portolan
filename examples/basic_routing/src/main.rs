@@ -13,7 +13,7 @@ use portolan_core::{
 use portolan_leit::{LeitSource, TextQueryLowerer};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
-use portolan_schema::{MaterializedField, ProjectSubject, SubjectProjection};
+use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
 use portolan_source::{CandidateSink, RetrievalSource};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -190,18 +190,17 @@ fn analyzers() -> FieldAnalyzers {
 }
 
 fn build_index(
-    projections: &[SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>],
+    catalog: &ProjectionCatalog<DemoSubject, StandardAffordance, CommandMetadata>,
 ) -> InMemoryIndex {
     let mut builder = InMemoryIndexBuilder::new(analyzers());
     builder.register_field_alias(FieldId::new(1), "title");
     builder.register_field_alias(FieldId::new(2), "description");
 
-    for (doc_id, projection) in projections.iter().enumerate() {
+    for (doc_id, projection) in catalog.iter() {
         let mut fields = Vec::new();
         for field in &projection.materialized_fields {
             fields.push((field.field, field.text.as_str()));
         }
-        let doc_id = u32::try_from(doc_id + 1).expect("example projection count should fit in u32");
         builder
             .index_document(doc_id, &fields)
             .expect("projection should index");
@@ -224,16 +223,13 @@ fn main() {
         },
     ];
     let projector = CommandProjector;
-    let projections: Vec<SubjectProjection<DemoSubject, StandardAffordance, CommandMetadata>> =
-        records
-            .iter()
-            .map(|record| projector.project(record))
-            .collect();
+    let catalog =
+        ProjectionCatalog::from_projections(records.iter().map(|record| projector.project(record)));
 
     println!("Portolan basic routing example");
     println!();
     println!("1. Project host records into retrievable subjects");
-    for projection in &projections {
+    for (_, projection) in catalog.iter() {
         println!("   - subject: {}", subject_label(&projection.subject));
         for field in &projection.materialized_fields {
             println!("     field {} => {}", field.field.as_u32(), field.text);
@@ -251,27 +247,14 @@ fn main() {
     }
     println!();
 
-    let index = build_index(&projections);
-    let subjects: Vec<_> = projections
-        .iter()
-        .map(|projection| projection.subject.clone())
-        .collect();
-    let projected_affordances: Vec<_> = projections
-        .iter()
-        .map(|projection| projection.affordances.clone())
-        .collect();
-    let projected_titles: Vec<_> = projections
-        .iter()
-        .map(|projection| projection.metadata.title)
-        .collect();
+    let index = build_index(&catalog);
+    let mapper_catalog = catalog.clone();
+    let enrich_catalog = catalog.clone();
     let mapper: SubjectMapper =
-        Box::new(move |doc_id: u32| subjects.get((doc_id as usize).saturating_sub(1)).cloned());
+        Box::new(move |doc_id: u32| mapper_catalog.subject(doc_id).cloned());
     let enricher: HitEnricher = Box::new(move |doc_id: u32, hit: &mut DemoHit| {
-        let index = (doc_id as usize).saturating_sub(1);
-        if let Some(affordances) = projected_affordances.get(index) {
-            hit.affordances = affordances.clone();
-        }
-        if projected_titles.get(index).is_some() {
+        if let Some(projection) = enrich_catalog.projection(doc_id) {
+            hit.affordances = projection.affordances.clone();
             hit.evidence.push(Evidence {
                 field: Some(FieldId::new(1)),
                 contribution: hit.score,
