@@ -12,7 +12,7 @@ use portolan_core::{
 };
 use portolan_leit::LeitSource;
 use portolan_query::PortolanQuery;
-use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
+use portolan_route::{RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource};
 use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -149,6 +149,15 @@ fn routes_materialized_sources_before_contextual_sources() {
 
     assert_eq!(trace.sources_visited, 2);
     assert_eq!(trace.stages_visited, 2);
+    assert_eq!(trace.hits_emitted, 2);
+    assert!(trace.stop_reason.is_none());
+    assert_eq!(trace.stages.len(), 2);
+    assert_eq!(trace.stages[0].stage, RouteStage::Materialized);
+    assert_eq!(trace.stages[0].sources_visited, 1);
+    assert_eq!(trace.stages[0].hits_emitted, 1);
+    assert_eq!(trace.stages[1].stage, RouteStage::Contextual);
+    assert_eq!(trace.stages[1].sources_visited, 1);
+    assert_eq!(trace.stages[1].hits_emitted, 1);
     assert_eq!(trace.visits.len(), 2);
     assert_eq!(trace.visits[0].source, "leit.materialized");
     assert_eq!(trace.visits[1].source, "context.recent");
@@ -162,4 +171,62 @@ fn routes_materialized_sources_before_contextual_sources() {
     assert_eq!(sink.as_slice()[0].evidence.len(), 1);
     assert_eq!(sink.as_slice()[1].subject, DemoSubject("context.recent"));
     assert_eq!(sink.as_slice()[1].origin, RetrievalOrigin::ContextCache);
+}
+
+#[test]
+fn stops_after_stage_hit_limit_before_later_stages() {
+    let index = test_index();
+    let leit = StagedLeitSource::new(
+        LeitSource::new(
+            &index,
+            |doc_id| match doc_id {
+                1 => Some(DemoSubject("command.open_scene")),
+                2 => Some(DemoSubject("command.inspect_object")),
+                _ => None,
+            },
+            SearchScorer::bm25(),
+        )
+        .with_enricher(|_doc_id, hit: &mut PortolanHit<DemoSubject>| {
+            hit.affordances = vec![Affordance::new(StandardAffordance::Execute)];
+        }),
+    );
+    let context = ContextSource;
+    let sources: [(&str, &dyn StagedRetrievalSource<DemoSubject>); 2] =
+        [("leit.materialized", &leit), ("context.recent", &context)];
+    let query = PortolanQuery::<(), ()>::text("open");
+    let router = RetrievalRouter::new();
+    let mut sink = CandidateBuffer::<DemoSubject>::new();
+
+    let trace = router.retrieve_traced_with_policy(
+        RoutePlan::standard(),
+        RoutePolicy {
+            stop_after_stage_hits: Some(1),
+            stop_after_total_hits: None,
+        },
+        &sources,
+        &query,
+        &RetrievalContext::<(), (), (), ()>::default(),
+        RetrievalBudget::interactive_default(),
+        &mut sink,
+    );
+
+    assert_eq!(trace.sources_visited, 1);
+    assert_eq!(trace.stages_visited, 1);
+    assert_eq!(trace.hits_emitted, 1);
+    assert_eq!(trace.visits.len(), 1);
+    assert_eq!(trace.stages.len(), 1);
+    assert_eq!(trace.stages[0].stage, RouteStage::Materialized);
+    assert_eq!(trace.stages[0].hits_emitted, 1);
+    assert_eq!(
+        trace.stop_reason,
+        Some(portolan_observe::StopReason::StageHitLimitReached {
+            stage: RouteStage::Materialized,
+            hits_emitted: 1,
+        })
+    );
+    assert_eq!(sink.len(), 1);
+    assert_eq!(
+        sink.as_slice()[0].subject,
+        DemoSubject("command.open_scene")
+    );
 }

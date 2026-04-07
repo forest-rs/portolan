@@ -16,7 +16,7 @@ use portolan_core::{
 use portolan_ingest::{FieldAlias, build_leit_index};
 use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource, TextQueryLowerer};
 use portolan_query::{ParsedQuery, PortolanQuery};
-use portolan_route::{RetrievalRouter, RoutePlan, RouteStage, StagedRetrievalSource};
+use portolan_route::{RetrievalRouter, RoutePlan, RoutePolicy, RouteStage, StagedRetrievalSource};
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
 use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
@@ -405,6 +405,7 @@ struct CommandPalette<'a> {
     router: RetrievalRouter,
     plan: RoutePlan,
     budget: RetrievalBudget,
+    policy: RoutePolicy,
     sources: [LabeledPaletteSource<'a>; 3],
     catalog: &'a ProjectionCatalog<PaletteSubject, StandardAffordance, CommandMetadata>,
     resolver: PaletteResolver,
@@ -424,6 +425,10 @@ impl<'a> CommandPalette<'a> {
                 max_nodes_scanned: 256,
                 max_time_us: 5_000,
             },
+            policy: RoutePolicy {
+                stop_after_stage_hits: None,
+                stop_after_total_hits: Some(3),
+            },
             sources,
             catalog,
             resolver: PaletteResolver,
@@ -434,8 +439,9 @@ impl<'a> CommandPalette<'a> {
         let query = PortolanQuery::<(), ()>::text(input);
         let mut hits =
             CandidateBuffer::<PaletteSubject, StandardAffordance, PaletteEvidence>::new();
-        let trace = self.router.retrieve_traced(
+        let trace = self.router.retrieve_traced_with_policy(
             self.plan,
+            self.policy,
             &self.sources,
             &query,
             context,
@@ -666,6 +672,7 @@ fn main() {
         stage_label(RoutePlan::standard().stages()[1]),
         stage_label(RoutePlan::standard().stages()[2])
     );
+    println!("   stop policy: stop after 3 total hits");
     println!();
 
     let response = palette.search("camera", &context);
@@ -682,6 +689,35 @@ fn main() {
             stage_label(visit.stage),
             visit.source
         );
+    }
+    println!("   stage summary:");
+    for stage in &response.trace.stages {
+        println!(
+            "     - stage={} sources={} hits={}",
+            stage_label(stage.stage),
+            stage.sources_visited,
+            stage.hits_emitted
+        );
+    }
+    if let Some(stop_reason) = &response.trace.stop_reason {
+        match stop_reason {
+            portolan_observe::StopReason::StageHitLimitReached {
+                stage,
+                hits_emitted,
+            } => println!(
+                "   stopped early: stage {} reached {} hits",
+                stage_label(*stage),
+                hits_emitted
+            ),
+            portolan_observe::StopReason::TotalHitLimitReached {
+                stage,
+                hits_emitted,
+            } => println!(
+                "   stopped early: total hit limit reached in {} at {} hits",
+                stage_label(*stage),
+                hits_emitted
+            ),
+        }
     }
 
     for (index, item) in response.items.iter().enumerate() {
