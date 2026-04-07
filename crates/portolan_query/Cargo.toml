@@ -19,8 +19,5 @@ std = ["portolan_core/std"]
 [dependencies]
 portolan_core = { workspace = true }
 
-[dev-dependencies]
-proptest = { workspace = true }
-
 [lints]
 workspace = true
