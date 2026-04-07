@@ -12,6 +12,7 @@ env:
   # List of packages that will be checked with the minimum supported Rust version.
   # This should be limited to packages that are intended for publishing.
   RUST_MIN_VER_PKGS: >-
+    -p portolan
     -p portolan_core
     -p portolan_ingest
     -p portolan_leit

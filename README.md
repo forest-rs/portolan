@@ -25,6 +25,7 @@ path enables `std` by default, but the core crates can be built with
 
 That applies to:
 
+- `portolan`
 - `portolan_core`
 - `portolan_schema`
 - `portolan_query`
@@ -35,6 +36,7 @@ Its tests run under `std`.
 
 ## Workspace crates
 
+- `portolan`: curated facade crate and preferred entry point for the main retrieval workflow
 - `portolan_core`: typed hits, affordances, provenance, budgets, and resolver seams
 - `portolan_ingest`: materialization from projected subjects into retrieval backends
 - `portolan_leit`: adapters that lower Portolan retrieval into `leit_*`
@@ -51,7 +53,7 @@ Examples live in top-level workspace members so core crates stay free of extra
 dev-dependencies.
 
 - `examples/basic_routing`: Leit-backed plus contextual routing over projected subjects
-- `examples/command_palette`: a host-facing command palette API built on Portolan
+- `examples/command_palette`: a host-facing command palette API built on the `portolan` facade
 - `examples/virtual_workset`: Leit-backed plus visible-workset virtual retrieval
 
 ## Planned crates
@@ -78,6 +80,9 @@ custom verifier type.
 Retrieval context has also been simplified to one host-defined snapshot per
 surface, so examples no longer need placeholder lanes for selection, focus,
 view, or recents when those concepts are not all independently meaningful.
+
+The new `portolan` crate is the preferred way into the workspace when you want
+the main retrieval path without importing several `portolan_*` crates directly.
 
 ## Verification
 

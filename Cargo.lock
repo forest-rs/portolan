@@ -64,14 +64,7 @@ dependencies = [
  "leit_core",
  "leit_index",
  "leit_text",
- "portolan_core",
- "portolan_ingest",
- "portolan_leit",
- "portolan_observe",
- "portolan_query",
- "portolan_route",
- "portolan_schema",
- "portolan_source",
+ "portolan",
 ]
 
 [[package]]
@@ -427,6 +420,20 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "portolan"
+version = "0.1.0"
+dependencies = [
+ "portolan_core",
+ "portolan_ingest",
+ "portolan_leit",
+ "portolan_observe",
+ "portolan_query",
+ "portolan_route",
+ "portolan_schema",
+ "portolan_source",
+]
 
 [[package]]
 name = "portolan_core"

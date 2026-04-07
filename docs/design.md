@@ -36,6 +36,9 @@ lexical indexing, canonical world state, or host action execution.
 
 ## Current crate map
 
+- `portolan`
+  - Owns the curated facade and canonical entry path into the Portolan family.
+  - Explicitly does not replace the ownership boundaries of the lower-level crates.
 - `portolan_core`
   - Owns hits, evidence, affordances, retrieval origin, budgets, context
     envelopes, and affordance-resolution seams.
@@ -77,6 +80,9 @@ lexical indexing, canonical world state, or host action execution.
 
 ## Dependency rules
 
+- `portolan` depends inward on the main Portolan crates and may expose
+  optional modules for heavier layers such as schema, ingest, and Leit-backed
+  retrieval.
 - `portolan_core` depends on `leit_core` for shared score and field vocabulary.
 - `portolan_schema` depends on `portolan_core` and `leit_core`.
 - `portolan_query` depends only on `portolan_core`.

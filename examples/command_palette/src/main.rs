@@ -6,22 +6,18 @@
 use std::string::String;
 use std::vec::Vec;
 
-use leit_core::{FieldId, Score};
 use leit_index::SearchScorer;
 use leit_text::{Analyzer, FieldAnalyzers, UnicodeNormalizer, WhitespaceTokenizer};
-use portolan_core::{
-    Affordance, AffordanceResolver, Evidence, PortolanHit, RetrievalBudget, RetrievalContext,
-    RetrievalOrigin, StandardAffordance,
+use portolan::ingest::{FieldAlias, build_leit_index};
+use portolan::leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
+use portolan::schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
+use portolan::{
+    Affordance, AffordanceResolver, CandidateBuffer, CandidateSink, Evidence, FieldId,
+    HitVerifierExt, ParsedQuery, PortolanHit, PortolanQuery, ReconciliationPolicy, RetrievalBudget,
+    RetrievalContext, RetrievalOrigin, RetrievalRouter, RetrievalSource, RetrievalTrace, RoutePlan,
+    RoutePolicy, RouteStage, Score, StagedRetrievalSource, StandardAffordance, StopReason,
+    subject_verifier,
 };
-use portolan_ingest::{FieldAlias, build_leit_index};
-use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
-use portolan_query::{ParsedQuery, PortolanQuery};
-use portolan_route::{
-    HitVerifierExt, ReconciliationPolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage,
-    StagedRetrievalSource, subject_verifier,
-};
-use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
-use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum PaletteSubject {
@@ -112,7 +108,7 @@ struct PaletteItem {
 #[derive(Clone, Debug)]
 struct PaletteResponse {
     items: Vec<PaletteItem>,
-    trace: portolan_observe::RetrievalTrace<RouteStage>,
+    trace: RetrievalTrace<RouteStage>,
 }
 
 struct PaletteResolver;
@@ -410,9 +406,9 @@ impl<'a> CommandPalette<'a> {
                     };
 
                     if present {
-                        portolan_route::VerificationOutcome::Retain
+                        portolan::VerificationOutcome::Retain
                     } else {
-                        portolan_route::VerificationOutcome::Reject
+                        portolan::VerificationOutcome::Reject
                     }
                 },
             );
@@ -709,7 +705,7 @@ fn main() {
     }
     if let Some(stop_reason) = &response.trace.stop_reason {
         match stop_reason {
-            portolan_observe::StopReason::StageHitLimitReached {
+            StopReason::StageHitLimitReached {
                 stage,
                 hits_emitted,
             } => println!(
@@ -717,7 +713,7 @@ fn main() {
                 stage_label(*stage),
                 hits_emitted
             ),
-            portolan_observe::StopReason::TotalHitLimitReached {
+            StopReason::TotalHitLimitReached {
                 stage,
                 hits_emitted,
             } => println!(

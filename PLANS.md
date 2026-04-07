@@ -2,35 +2,36 @@
 
 ## Goals
 
-- Collapse `RetrievalContext` from four placeholder generic lanes into one
-  host-defined context snapshot.
-- Remove the current semantic mismatch where examples use `selection` to carry
-  host truth and `visible_view` / `recent` to carry other unrelated state.
-- Keep the new public API calm enough that examples, docs, and route helpers
-  become easier to read immediately.
+- Add a root `portolan` facade crate that gives downstream users one calmer
+  entry point into the workspace.
+- Keep the facade curated rather than exhaustive so it teaches one canonical
+  workflow instead of flattening the crate graph blindly.
+- Prove the facade by updating one real example to depend on `portolan`
+  instead of importing many `portolan_*` crates directly.
 
 ## Non-Goals
 
-- Do not redesign filtering, fusion, or async retrieval in this pass.
-- Do not add new production dependencies.
-- Do not introduce compatibility shims for the old four-lane context API.
+- Do not turn `portolan` into a second copy of every lower-level API.
+- Do not re-export all of Leit or hide backend-specific setup behind Portolan.
+- Do not change crate ownership boundaries underneath the existing workspace.
 
 ## Steps
 
-1. Replace `RetrievalContext<Selection, Focus, View, Recent>` with
-   `RetrievalContext<Host>` in `portolan_core`, including small constructors.
-2. Thread the simplified context type through `portolan_source`,
-   `portolan_route`, and `portolan_leit`.
-3. Update examples and integration tests to use one explicit host snapshot per
-   surface instead of split placeholder lanes.
-4. Refresh migration notes, crate docs, and any doctests that still imply the
-   old shape.
+1. Add `crates/portolan` with a small curated top-level API and nested module
+   re-exports for lower-level or optional crates.
+2. Gate heavier facade modules such as `leit`, `schema`, `ingest`, and
+   `observe` behind explicit features so the root crate does not force extra
+   dependencies by default.
+3. Update workspace docs and CI package lists for the new publishable crate.
+4. Switch `examples/command_palette` to the facade crate to prove the preferred
+   way in.
 5. Run fmt, clippy, tests, and docs before committing.
 
 ## Risks
 
-- This is a broad public API break, so migration notes need to be explicit.
-- Example output and verifier helpers can become less clear if the new host
-  snapshot names are sloppy.
-- It is easy to mechanically collapse generics but miss one place where the old
-  field names still leak into docs or tests.
+- A facade crate can become an unprincipled export barrel if the curated
+  top-level path is not selective.
+- Optional feature wiring can accidentally drag std or backend dependencies into
+  the minimal facade path.
+- The example should get simpler; if it only changes names, the facade is not
+  earning its keep.
