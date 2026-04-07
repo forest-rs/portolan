@@ -29,6 +29,8 @@ pub struct StageRecord<Stage> {
     pub hits_emitted: u32,
     /// Number of duplicate hits suppressed while this stage ran.
     pub duplicates_suppressed: u32,
+    /// Number of hits rejected by verification while this stage ran.
+    pub hits_rejected: u32,
 }
 
 /// Reason that routed retrieval stopped before exhausting the plan.
@@ -78,6 +80,8 @@ pub struct RetrievalTrace<Stage> {
     pub hits_emitted: u32,
     /// Number of duplicate hits suppressed before reaching the caller sink.
     pub duplicates_suppressed: u32,
+    /// Number of hits rejected by verification before reaching the caller sink.
+    pub hits_rejected: u32,
     /// Reason retrieval stopped early, when applicable.
     pub stop_reason: Option<StopReason<Stage>>,
 }
@@ -94,6 +98,7 @@ impl<Stage> RetrievalTrace<Stage> {
             stages_visited: 0,
             hits_emitted: 0,
             duplicates_suppressed: 0,
+            hits_rejected: 0,
             stop_reason: None,
         }
     }
@@ -117,6 +122,7 @@ impl<Stage> RetrievalTrace<Stage> {
         sources_visited: u32,
         hits_emitted: u32,
         duplicates_suppressed: u32,
+        hits_rejected: u32,
     ) {
         self.stages_visited = self
             .stages_visited
@@ -127,6 +133,7 @@ impl<Stage> RetrievalTrace<Stage> {
             sources_visited,
             hits_emitted,
             duplicates_suppressed,
+            hits_rejected,
         });
         self.hits_emitted = self
             .hits_emitted
@@ -136,6 +143,10 @@ impl<Stage> RetrievalTrace<Stage> {
             .duplicates_suppressed
             .checked_add(duplicates_suppressed)
             .expect("duplicate suppression count overflow");
+        self.hits_rejected = self
+            .hits_rejected
+            .checked_add(hits_rejected)
+            .expect("verification rejection count overflow");
     }
 
     /// Record that retrieval stopped early.

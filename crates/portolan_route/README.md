@@ -9,3 +9,6 @@ and incremental without forcing async into the first slice.
 Route policy stays explicit. Callers choose whether to exhaust the full plan,
 stop early after enough retained hits, and keep or suppress duplicate subjects
 across sources.
+
+Callers may also provide a verifier that finalizes routed hits against host
+truth before they reach the caller sink.
