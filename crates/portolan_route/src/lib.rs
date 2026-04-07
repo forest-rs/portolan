@@ -82,6 +82,71 @@ pub trait HitVerifier<
     ) -> VerificationOutcome;
 }
 
+/// Extension helpers for composing hit verifiers.
+pub trait HitVerifierExt<
+    S: SubjectRef,
+    Selection = (),
+    Focus = (),
+    View = (),
+    Recent = (),
+    A = portolan_core::StandardAffordance,
+    E = (),
+>: HitVerifier<S, Selection, Focus, View, Recent, A, E> + Sized
+{
+    /// Require both verifiers to retain a hit in sequence.
+    ///
+    /// The right-hand verifier only runs when the left-hand verifier retains
+    /// the hit.
+    ///
+    /// ```
+    /// use portolan_core::{PortolanHit, RetrievalContext, RetrievalOrigin};
+    /// use portolan_route::{
+    ///     subject_verifier, HitVerifier, HitVerifierExt, VerificationOutcome,
+    /// };
+    ///
+    /// #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    /// struct DemoSubject(&'static str);
+    ///
+    /// let verifier = subject_verifier(|subject: &DemoSubject, _context: &RetrievalContext| {
+    ///     subject.0 != "stale"
+    /// })
+    /// .and(|hit: &mut PortolanHit<DemoSubject>, _context: &RetrievalContext| {
+    ///     if hit.subject.0 == "hidden" {
+    ///         VerificationOutcome::Reject
+    ///     } else {
+    ///         VerificationOutcome::Retain
+    ///     }
+    /// });
+    ///
+    /// let mut hit = PortolanHit::new(
+    ///     DemoSubject("visible"),
+    ///     portolan_core::Score::new(1.0),
+    ///     RetrievalOrigin::ContextCache,
+    /// );
+    /// assert_eq!(
+    ///     verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+    ///     VerificationOutcome::Retain
+    /// );
+    /// ```
+    fn and<Other>(self, other: Other) -> AndVerifier<Self, Other>
+    where
+        Other: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+    {
+        AndVerifier {
+            left: self,
+            right: other,
+        }
+    }
+}
+
+impl<S, Selection, Focus, View, Recent, A, E, Verifier>
+    HitVerifierExt<S, Selection, Focus, View, Recent, A, E> for Verifier
+where
+    S: SubjectRef,
+    Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E> + Sized,
+{
+}
+
 impl<S, Selection, Focus, View, Recent, A, E, F>
     HitVerifier<S, Selection, Focus, View, Recent, A, E> for F
 where
@@ -100,6 +165,69 @@ where
     }
 }
 
+/// Verifier that retains a hit only when its subject satisfies a predicate.
+#[derive(Clone, Copy, Debug)]
+pub struct SubjectVerifier<Predicate> {
+    predicate: Predicate,
+}
+
+impl<Predicate> SubjectVerifier<Predicate> {
+    /// Create a subject-level verifier from one predicate.
+    pub const fn new(predicate: Predicate) -> Self {
+        Self { predicate }
+    }
+}
+
+/// Create a subject-level verifier from one predicate.
+///
+/// This is useful when verification depends only on subject identity plus the
+/// explicit retrieval context, not on mutating the full hit.
+///
+/// ```
+/// use portolan_core::RetrievalContext;
+/// use portolan_route::{subject_verifier, HitVerifier, VerificationOutcome};
+///
+/// #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// struct DemoSubject(&'static str);
+///
+/// let verifier = subject_verifier(|subject: &DemoSubject, _context: &RetrievalContext| {
+///     subject.0 == "allowed"
+/// });
+///
+/// let mut hit = portolan_core::PortolanHit::<DemoSubject>::new(
+///     DemoSubject("allowed"),
+///     portolan_core::Score::new(1.0),
+///     portolan_core::RetrievalOrigin::ContextCache,
+/// );
+///
+/// assert_eq!(
+///     verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+///     VerificationOutcome::Retain
+/// );
+/// ```
+pub const fn subject_verifier<Predicate>(predicate: Predicate) -> SubjectVerifier<Predicate> {
+    SubjectVerifier::new(predicate)
+}
+
+impl<S, Selection, Focus, View, Recent, A, E, Predicate>
+    HitVerifier<S, Selection, Focus, View, Recent, A, E> for SubjectVerifier<Predicate>
+where
+    S: SubjectRef,
+    Predicate: Fn(&S, &RetrievalContext<Selection, Focus, View, Recent>) -> bool,
+{
+    fn verify_hit(
+        &self,
+        hit: &mut PortolanHit<S, A, E>,
+        context: &RetrievalContext<Selection, Focus, View, Recent>,
+    ) -> VerificationOutcome {
+        if (self.predicate)(&hit.subject, context) {
+            VerificationOutcome::Retain
+        } else {
+            VerificationOutcome::Reject
+        }
+    }
+}
+
 /// Verifier that retains every hit unchanged.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoopHitVerifier;
@@ -115,6 +243,32 @@ where
         _context: &RetrievalContext<Selection, Focus, View, Recent>,
     ) -> VerificationOutcome {
         VerificationOutcome::Retain
+    }
+}
+
+/// Sequential composition of two hit verifiers.
+#[derive(Clone, Copy, Debug)]
+pub struct AndVerifier<Left, Right> {
+    left: Left,
+    right: Right,
+}
+
+impl<S, Selection, Focus, View, Recent, A, E, Left, Right>
+    HitVerifier<S, Selection, Focus, View, Recent, A, E> for AndVerifier<Left, Right>
+where
+    S: SubjectRef,
+    Left: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+    Right: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+{
+    fn verify_hit(
+        &self,
+        hit: &mut PortolanHit<S, A, E>,
+        context: &RetrievalContext<Selection, Focus, View, Recent>,
+    ) -> VerificationOutcome {
+        match self.left.verify_hit(hit, context) {
+            VerificationOutcome::Retain => self.right.verify_hit(hit, context),
+            VerificationOutcome::Reject => VerificationOutcome::Reject,
+        }
     }
 }
 
@@ -775,5 +929,55 @@ where
                     .expect("counting sink hit count overflow");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HitVerifier, HitVerifierExt, VerificationOutcome, subject_verifier};
+    use portolan_core::{PortolanHit, RetrievalContext, RetrievalOrigin, Score};
+
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+    struct DemoSubject(&'static str);
+
+    #[test]
+    fn subject_verifier_rejects_missing_subjects() {
+        let verifier = subject_verifier(|subject: &DemoSubject, _context: &RetrievalContext| {
+            subject.0 == "ok"
+        });
+        let mut hit = PortolanHit::<DemoSubject>::new(
+            DemoSubject("stale"),
+            Score::new(1.0),
+            RetrievalOrigin::ContextCache,
+        );
+
+        assert_eq!(
+            verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+            VerificationOutcome::Reject
+        );
+    }
+
+    #[test]
+    fn and_verifier_short_circuits_on_reject() {
+        let verifier = subject_verifier(|subject: &DemoSubject, _context: &RetrievalContext| {
+            subject.0 == "ok"
+        })
+        .and(
+            |hit: &mut PortolanHit<DemoSubject>, _context: &RetrievalContext| {
+                hit.score = Score::new(2.0);
+                VerificationOutcome::Retain
+            },
+        );
+        let mut hit = PortolanHit::new(
+            DemoSubject("stale"),
+            Score::new(1.0),
+            RetrievalOrigin::ContextCache,
+        );
+
+        assert_eq!(
+            verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+            VerificationOutcome::Reject
+        );
+        assert_eq!(hit.score, Score::new(1.0));
     }
 }

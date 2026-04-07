@@ -70,6 +70,10 @@ returned as typed hits with provenance and affordances.
 The current examples and helpers demonstrate the shape of explainability, but
 they do not yet guarantee backend-truth provenance for every evidence record.
 
+Verification now has a small ergonomic surface in `portolan_route`, and the
+command-palette example demonstrates composing host-truth checks without a
+custom verifier type.
+
 ## Migration Notes
 
 - `ProjectionCatalog::insert` and `ProjectionCatalog::from_projections` now return `Result` and reject duplicate subjects. Existing call sites should handle or `expect(...)` that error explicitly.

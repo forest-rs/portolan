@@ -17,8 +17,8 @@ use portolan_ingest::{FieldAlias, build_leit_index};
 use portolan_leit::{CatalogHitEnricher, CatalogSubjectMapper, LeitSource};
 use portolan_query::{ParsedQuery, PortolanQuery};
 use portolan_route::{
-    HitVerifier, ReconciliationPolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage,
-    StagedRetrievalSource, VerificationOutcome,
+    HitVerifierExt, ReconciliationPolicy, RetrievalRouter, RoutePlan, RoutePolicy, RouteStage,
+    StagedRetrievalSource, subject_verifier,
 };
 use portolan_schema::{MaterializedField, ProjectSubject, ProjectionCatalog, SubjectProjection};
 use portolan_source::{CandidateBuffer, CandidateSink, RetrievalSource};
@@ -112,70 +112,6 @@ struct PaletteResponse {
 }
 
 struct PaletteResolver;
-
-struct PaletteVerifier<'a> {
-    catalog: &'a ProjectionCatalog<PaletteSubject, StandardAffordance, CommandMetadata>,
-}
-
-impl<'a> PaletteVerifier<'a> {
-    const fn new(
-        catalog: &'a ProjectionCatalog<PaletteSubject, StandardAffordance, CommandMetadata>,
-    ) -> Self {
-        Self { catalog }
-    }
-}
-
-impl
-    HitVerifier<
-        PaletteSubject,
-        PaletteTruth,
-        (),
-        PaletteView,
-        PaletteRecent,
-        StandardAffordance,
-        PaletteEvidence,
-    > for PaletteVerifier<'_>
-{
-    fn verify_hit(
-        &self,
-        hit: &mut PortolanHit<PaletteSubject, StandardAffordance, PaletteEvidence>,
-        context: &PaletteContext,
-    ) -> VerificationOutcome {
-        match &hit.subject {
-            PaletteSubject::Command(_) => {
-                if self.catalog.doc_id_for_subject(&hit.subject).is_some() {
-                    VerificationOutcome::Retain
-                } else {
-                    VerificationOutcome::Reject
-                }
-            }
-            PaletteSubject::Object(id) => {
-                context
-                    .selection
-                    .as_ref()
-                    .map_or(VerificationOutcome::Reject, |truth| {
-                        if truth.object_ids.iter().any(|candidate| candidate == id) {
-                            VerificationOutcome::Retain
-                        } else {
-                            VerificationOutcome::Reject
-                        }
-                    })
-            }
-            PaletteSubject::Recent(id) => {
-                context
-                    .selection
-                    .as_ref()
-                    .map_or(VerificationOutcome::Reject, |truth| {
-                        if truth.recent_ids.iter().any(|candidate| candidate == id) {
-                            VerificationOutcome::Retain
-                        } else {
-                            VerificationOutcome::Reject
-                        }
-                    })
-            }
-        }
-    }
-}
 
 impl AffordanceResolver<PaletteSubject, StandardAffordance> for PaletteResolver {
     type Resolved = PaletteAction;
@@ -485,7 +421,6 @@ struct CommandPalette<'a> {
     policy: RoutePolicy,
     sources: [LabeledPaletteSource<'a>; 3],
     catalog: &'a ProjectionCatalog<PaletteSubject, StandardAffordance, CommandMetadata>,
-    verifier: PaletteVerifier<'a>,
     resolver: PaletteResolver,
 }
 
@@ -510,7 +445,6 @@ impl<'a> CommandPalette<'a> {
             },
             sources,
             catalog,
-            verifier: PaletteVerifier::new(catalog),
             resolver: PaletteResolver,
         }
     }
@@ -519,6 +453,39 @@ impl<'a> CommandPalette<'a> {
         let query = PortolanQuery::<(), ()>::text(input);
         let mut hits =
             CandidateBuffer::<PaletteSubject, StandardAffordance, PaletteEvidence>::new();
+        let verifier =
+            subject_verifier(
+                |subject: &PaletteSubject, _context: &PaletteContext| match subject {
+                    PaletteSubject::Command(_) => {
+                        self.catalog.doc_id_for_subject(subject).is_some()
+                    }
+                    _ => true,
+                },
+            )
+            .and(
+                |hit: &mut PortolanHit<PaletteSubject, StandardAffordance, PaletteEvidence>,
+                 context: &PaletteContext| {
+                    let present = match &hit.subject {
+                        PaletteSubject::Command(_) => true,
+                        PaletteSubject::Object(id) => {
+                            context.selection.as_ref().is_some_and(|truth| {
+                                truth.object_ids.iter().any(|candidate| candidate == id)
+                            })
+                        }
+                        PaletteSubject::Recent(id) => {
+                            context.selection.as_ref().is_some_and(|truth| {
+                                truth.recent_ids.iter().any(|candidate| candidate == id)
+                            })
+                        }
+                    };
+
+                    if present {
+                        portolan_route::VerificationOutcome::Retain
+                    } else {
+                        portolan_route::VerificationOutcome::Reject
+                    }
+                },
+            );
         let trace = self.router.retrieve_traced_verified_with_policy(
             self.plan,
             self.policy,
@@ -526,7 +493,7 @@ impl<'a> CommandPalette<'a> {
             &query,
             context,
             self.budget,
-            &self.verifier,
+            &verifier,
             &mut hits,
         );
         let items = hits

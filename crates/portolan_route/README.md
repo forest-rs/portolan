@@ -12,3 +12,7 @@ sources by retaining all of them, keeping the first, or keeping the best score.
 
 Callers may also provide a verifier that finalizes routed hits against host
 truth before they reach the caller sink.
+
+For common host checks, `subject_verifier(...)` lets callers verify by subject
+identity and explicit retrieval context without mutating the full hit. Verifier
+composition stays small and explicit through `HitVerifierExt::and(...)`.
