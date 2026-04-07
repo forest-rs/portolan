@@ -182,17 +182,47 @@ impl RetrievalBudget {
 
 /// Explicit retrieval context envelope.
 ///
-/// Each field is host-defined to avoid hard-coding one application state model.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RetrievalContext<Selection = (), Focus = (), View = (), Recent = ()> {
-    /// Current selection snapshot.
-    pub selection: Option<Selection>,
-    /// Current focus snapshot.
-    pub focus: Option<Focus>,
-    /// Current visible view snapshot.
-    pub visible_view: Option<View>,
-    /// Recent interaction history.
-    pub recent: Option<Recent>,
+/// Portolan transports one host-defined context snapshot instead of hard-coding
+/// multiple context lanes such as selection or focus. Hosts decide what
+/// contextual state matters for one retrieval surface and package it into one
+/// type.
+///
+/// ```
+/// use portolan_core::RetrievalContext;
+///
+/// #[derive(Clone, Debug, PartialEq, Eq)]
+/// struct HostState {
+///     focus_id: &'static str,
+/// }
+///
+/// let empty = RetrievalContext::<HostState>::default();
+/// let context = RetrievalContext::with_host(HostState { focus_id: "camera.main" });
+///
+/// assert!(empty.host.is_none());
+/// assert_eq!(context.host.as_ref().map(|state| state.focus_id), Some("camera.main"));
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RetrievalContext<Host = ()> {
+    /// Optional host-defined retrieval snapshot.
+    pub host: Option<Host>,
+}
+
+impl<Host> RetrievalContext<Host> {
+    /// Create a retrieval context from an optional host snapshot.
+    pub const fn new(host: Option<Host>) -> Self {
+        Self { host }
+    }
+
+    /// Create a retrieval context that carries one host snapshot.
+    pub fn with_host(host: Host) -> Self {
+        Self { host: Some(host) }
+    }
+}
+
+impl<Host> Default for RetrievalContext<Host> {
+    fn default() -> Self {
+        Self { host: None }
+    }
 }
 
 /// Host-owned resolver for turning affordance descriptors into concrete actions.

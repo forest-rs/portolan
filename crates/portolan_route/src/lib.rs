@@ -64,34 +64,18 @@ pub enum VerificationOutcome {
 }
 
 /// Host-owned verifier for finalizing routed hits against canonical state.
-pub trait HitVerifier<
-    S: SubjectRef,
-    Selection = (),
-    Focus = (),
-    View = (),
-    Recent = (),
-    A = portolan_core::StandardAffordance,
-    E = (),
->
-{
+pub trait HitVerifier<S: SubjectRef, Context = (), A = portolan_core::StandardAffordance, E = ()> {
     /// Verify one hit before it reaches the caller sink.
     fn verify_hit(
         &self,
         hit: &mut PortolanHit<S, A, E>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
     ) -> VerificationOutcome;
 }
 
 /// Extension helpers for composing hit verifiers.
-pub trait HitVerifierExt<
-    S: SubjectRef,
-    Selection = (),
-    Focus = (),
-    View = (),
-    Recent = (),
-    A = portolan_core::StandardAffordance,
-    E = (),
->: HitVerifier<S, Selection, Focus, View, Recent, A, E> + Sized
+pub trait HitVerifierExt<S: SubjectRef, Context = (), A = portolan_core::StandardAffordance, E = ()>:
+    HitVerifier<S, Context, A, E> + Sized
 {
     /// Require both verifiers to retain a hit in sequence.
     ///
@@ -124,13 +108,13 @@ pub trait HitVerifierExt<
     ///     RetrievalOrigin::ContextCache,
     /// );
     /// assert_eq!(
-    ///     verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+    ///     verifier.verify_hit(&mut hit, &RetrievalContext::default()),
     ///     VerificationOutcome::Retain
     /// );
     /// ```
     fn and<Other>(self, other: Other) -> AndVerifier<Self, Other>
     where
-        Other: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+        Other: HitVerifier<S, Context, A, E>,
     {
         AndVerifier {
             left: self,
@@ -139,27 +123,22 @@ pub trait HitVerifierExt<
     }
 }
 
-impl<S, Selection, Focus, View, Recent, A, E, Verifier>
-    HitVerifierExt<S, Selection, Focus, View, Recent, A, E> for Verifier
+impl<S, Context, A, E, Verifier> HitVerifierExt<S, Context, A, E> for Verifier
 where
     S: SubjectRef,
-    Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E> + Sized,
+    Verifier: HitVerifier<S, Context, A, E> + Sized,
 {
 }
 
-impl<S, Selection, Focus, View, Recent, A, E, F>
-    HitVerifier<S, Selection, Focus, View, Recent, A, E> for F
+impl<S, Context, A, E, F> HitVerifier<S, Context, A, E> for F
 where
     S: SubjectRef,
-    F: Fn(
-        &mut PortolanHit<S, A, E>,
-        &RetrievalContext<Selection, Focus, View, Recent>,
-    ) -> VerificationOutcome,
+    F: Fn(&mut PortolanHit<S, A, E>, &RetrievalContext<Context>) -> VerificationOutcome,
 {
     fn verify_hit(
         &self,
         hit: &mut PortolanHit<S, A, E>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
     ) -> VerificationOutcome {
         self(hit, context)
     }
@@ -201,7 +180,7 @@ impl<Predicate> SubjectVerifier<Predicate> {
 /// );
 ///
 /// assert_eq!(
-///     verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+///     verifier.verify_hit(&mut hit, &RetrievalContext::default()),
 ///     VerificationOutcome::Retain
 /// );
 /// ```
@@ -209,16 +188,15 @@ pub const fn subject_verifier<Predicate>(predicate: Predicate) -> SubjectVerifie
     SubjectVerifier::new(predicate)
 }
 
-impl<S, Selection, Focus, View, Recent, A, E, Predicate>
-    HitVerifier<S, Selection, Focus, View, Recent, A, E> for SubjectVerifier<Predicate>
+impl<S, Context, A, E, Predicate> HitVerifier<S, Context, A, E> for SubjectVerifier<Predicate>
 where
     S: SubjectRef,
-    Predicate: Fn(&S, &RetrievalContext<Selection, Focus, View, Recent>) -> bool,
+    Predicate: Fn(&S, &RetrievalContext<Context>) -> bool,
 {
     fn verify_hit(
         &self,
         hit: &mut PortolanHit<S, A, E>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
     ) -> VerificationOutcome {
         if (self.predicate)(&hit.subject, context) {
             VerificationOutcome::Retain
@@ -232,15 +210,14 @@ where
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoopHitVerifier;
 
-impl<S, Selection, Focus, View, Recent, A, E> HitVerifier<S, Selection, Focus, View, Recent, A, E>
-    for NoopHitVerifier
+impl<S, Context, A, E> HitVerifier<S, Context, A, E> for NoopHitVerifier
 where
     S: SubjectRef,
 {
     fn verify_hit(
         &self,
         _hit: &mut PortolanHit<S, A, E>,
-        _context: &RetrievalContext<Selection, Focus, View, Recent>,
+        _context: &RetrievalContext<Context>,
     ) -> VerificationOutcome {
         VerificationOutcome::Retain
     }
@@ -253,17 +230,16 @@ pub struct AndVerifier<Left, Right> {
     right: Right,
 }
 
-impl<S, Selection, Focus, View, Recent, A, E, Left, Right>
-    HitVerifier<S, Selection, Focus, View, Recent, A, E> for AndVerifier<Left, Right>
+impl<S, Context, A, E, Left, Right> HitVerifier<S, Context, A, E> for AndVerifier<Left, Right>
 where
     S: SubjectRef,
-    Left: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
-    Right: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+    Left: HitVerifier<S, Context, A, E>,
+    Right: HitVerifier<S, Context, A, E>,
 {
     fn verify_hit(
         &self,
         hit: &mut PortolanHit<S, A, E>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
     ) -> VerificationOutcome {
         match self.left.verify_hit(hit, context) {
             VerificationOutcome::Retain => self.right.verify_hit(hit, context),
@@ -311,39 +287,34 @@ pub trait StagedRetrievalSource<
     S: SubjectRef,
     Scope = (),
     Filter = (),
-    Selection = (),
-    Focus = (),
-    View = (),
-    Recent = (),
+    Context = (),
     A = portolan_core::StandardAffordance,
     E = (),
->: RetrievalSource<S, Scope, Filter, Selection, Focus, View, Recent, A, E>
+>: RetrievalSource<S, Scope, Filter, Context, A, E>
 {
     /// Stage in which this source should run.
     fn stage(&self) -> RouteStage;
 }
 
-type SourceRef<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E> =
-    &'a dyn StagedRetrievalSource<S, Scope, Filter, Selection, Focus, View, Recent, A, E>;
+type SourceRef<'a, S, Scope, Filter, Context, A, E> =
+    &'a dyn StagedRetrievalSource<S, Scope, Filter, Context, A, E>;
 
-type LabeledSource<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E> = (
-    &'a str,
-    SourceRef<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
-);
+type LabeledSource<'a, S, Scope, Filter, Context, A, E> =
+    (&'a str, SourceRef<'a, S, Scope, Filter, Context, A, E>);
 
-type SourceList<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E> =
-    &'a [SourceRef<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E>];
+type SourceList<'a, S, Scope, Filter, Context, A, E> =
+    &'a [SourceRef<'a, S, Scope, Filter, Context, A, E>];
 
-type LabeledSourceList<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E> =
-    &'a [LabeledSource<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E>];
+type LabeledSourceList<'a, S, Scope, Filter, Context, A, E> =
+    &'a [LabeledSource<'a, S, Scope, Filter, Context, A, E>];
 
-type TraceState<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E> = (
+type TraceState<'a, S, Scope, Filter, Context, A, E> = (
     &'a mut RetrievalTrace<RouteStage>,
-    LabeledSourceList<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+    LabeledSourceList<'a, S, Scope, Filter, Context, A, E>,
 );
 
-type MaybeTraceState<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E> =
-    Option<TraceState<'a, S, Scope, Filter, Selection, Focus, View, Recent, A, E>>;
+type MaybeTraceState<'a, S, Scope, Filter, Context, A, E> =
+    Option<TraceState<'a, S, Scope, Filter, Context, A, E>>;
 
 /// Stage order for one retrieval pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -386,12 +357,12 @@ impl RetrievalRouter {
     }
 
     /// Execute all matching sources in route-plan order.
-    pub fn retrieve_into<S: SubjectRef, Scope, Filter, Selection, Focus, View, Recent, A, E>(
+    pub fn retrieve_into<S: SubjectRef, Scope, Filter, Context, A, E>(
         &self,
         plan: RoutePlan,
-        sources: SourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: SourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RouteStats {
@@ -408,23 +379,13 @@ impl RetrievalRouter {
     }
 
     /// Execute all matching sources in route-plan order with an explicit stop policy.
-    pub fn retrieve_with_policy<
-        S: SubjectRef,
-        Scope,
-        Filter,
-        Selection,
-        Focus,
-        View,
-        Recent,
-        A,
-        E,
-    >(
+    pub fn retrieve_with_policy<S: SubjectRef, Scope, Filter, Context, A, E>(
         &self,
         plan: RoutePlan,
         policy: RoutePolicy,
-        sources: SourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: SourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RouteStats {
@@ -441,29 +402,18 @@ impl RetrievalRouter {
     }
 
     /// Execute all matching sources in route-plan order and verify hits before emitting them.
-    pub fn retrieve_verified_into<
-        S: SubjectRef,
-        Scope,
-        Filter,
-        Selection,
-        Focus,
-        View,
-        Recent,
-        A,
-        E,
-        Verifier,
-    >(
+    pub fn retrieve_verified_into<S: SubjectRef, Scope, Filter, Context, A, E, Verifier>(
         &self,
         plan: RoutePlan,
-        sources: SourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: SourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         verifier: &Verifier,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RouteStats
     where
-        Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+        Verifier: HitVerifier<S, Context, A, E>,
     {
         self.retrieve_verified_with_policy(
             plan,
@@ -478,30 +428,19 @@ impl RetrievalRouter {
     }
 
     /// Execute all matching sources in route-plan order with an explicit stop policy and verifier.
-    pub fn retrieve_verified_with_policy<
-        S: SubjectRef,
-        Scope,
-        Filter,
-        Selection,
-        Focus,
-        View,
-        Recent,
-        A,
-        E,
-        Verifier,
-    >(
+    pub fn retrieve_verified_with_policy<S: SubjectRef, Scope, Filter, Context, A, E, Verifier>(
         &self,
         plan: RoutePlan,
         policy: RoutePolicy,
-        sources: SourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: SourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         verifier: &Verifier,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RouteStats
     where
-        Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+        Verifier: HitVerifier<S, Context, A, E>,
     {
         Self::route(
             plan, policy, sources, query, context, budget, verifier, out, None,
@@ -509,12 +448,12 @@ impl RetrievalRouter {
     }
 
     /// Execute labeled sources and capture a retrieval trace.
-    pub fn retrieve_traced<S: SubjectRef, Scope, Filter, Selection, Focus, View, Recent, A, E>(
+    pub fn retrieve_traced<S: SubjectRef, Scope, Filter, Context, A, E>(
         &self,
         plan: RoutePlan,
-        sources: LabeledSourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: LabeledSourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RetrievalTrace<RouteStage> {
@@ -531,23 +470,13 @@ impl RetrievalRouter {
     }
 
     /// Execute labeled sources with an explicit stop policy and capture a retrieval trace.
-    pub fn retrieve_traced_with_policy<
-        S: SubjectRef,
-        Scope,
-        Filter,
-        Selection,
-        Focus,
-        View,
-        Recent,
-        A,
-        E,
-    >(
+    pub fn retrieve_traced_with_policy<S: SubjectRef, Scope, Filter, Context, A, E>(
         &self,
         plan: RoutePlan,
         policy: RoutePolicy,
-        sources: LabeledSourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: LabeledSourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RetrievalTrace<RouteStage> {
@@ -564,29 +493,18 @@ impl RetrievalRouter {
     }
 
     /// Execute labeled sources, verify hits, and capture a retrieval trace.
-    pub fn retrieve_traced_verified<
-        S: SubjectRef,
-        Scope,
-        Filter,
-        Selection,
-        Focus,
-        View,
-        Recent,
-        A,
-        E,
-        Verifier,
-    >(
+    pub fn retrieve_traced_verified<S: SubjectRef, Scope, Filter, Context, A, E, Verifier>(
         &self,
         plan: RoutePlan,
-        sources: LabeledSourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: LabeledSourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         verifier: &Verifier,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RetrievalTrace<RouteStage>
     where
-        Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+        Verifier: HitVerifier<S, Context, A, E>,
     {
         self.retrieve_traced_verified_with_policy(
             plan,
@@ -605,10 +523,7 @@ impl RetrievalRouter {
         S: SubjectRef,
         Scope,
         Filter,
-        Selection,
-        Focus,
-        View,
-        Recent,
+        Context,
         A,
         E,
         Verifier,
@@ -616,15 +531,15 @@ impl RetrievalRouter {
         &self,
         plan: RoutePlan,
         policy: RoutePolicy,
-        sources: LabeledSourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: LabeledSourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         verifier: &Verifier,
         out: &mut dyn CandidateSink<S, A, E>,
     ) -> RetrievalTrace<RouteStage>
     where
-        Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+        Verifier: HitVerifier<S, Context, A, E>,
     {
         let source_refs: Vec<_> = sources.iter().map(|(_, source)| *source).collect();
         let mut trace = RetrievalTrace::new(query.raw.clone(), budget);
@@ -642,19 +557,19 @@ impl RetrievalRouter {
         trace
     }
 
-    fn route<S: SubjectRef, Scope, Filter, Selection, Focus, View, Recent, A, E, Verifier>(
+    fn route<S: SubjectRef, Scope, Filter, Context, A, E, Verifier>(
         plan: RoutePlan,
         policy: RoutePolicy,
-        sources: SourceList<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        sources: SourceList<'_, S, Scope, Filter, Context, A, E>,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         verifier: &Verifier,
         out: &mut dyn CandidateSink<S, A, E>,
-        mut trace: MaybeTraceState<'_, S, Scope, Filter, Selection, Focus, View, Recent, A, E>,
+        mut trace: MaybeTraceState<'_, S, Scope, Filter, Context, A, E>,
     ) -> RouteStats
     where
-        Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+        Verifier: HitVerifier<S, Context, A, E>,
     {
         let mut stats = RouteStats::default();
         let mut retained = RetainedHits::new();
@@ -814,9 +729,9 @@ impl<S: SubjectRef, A, E> RetainedHits<S, A, E> {
     }
 }
 
-struct RoutingSink<'a, S: SubjectRef, Selection, Focus, View, Recent, A, E, Verifier> {
+struct RoutingSink<'a, S: SubjectRef, Context, A, E, Verifier> {
     retained: &'a mut RetainedHits<S, A, E>,
-    context: &'a RetrievalContext<Selection, Focus, View, Recent>,
+    context: &'a RetrievalContext<Context>,
     verifier: &'a Verifier,
     reconciliation_policy: ReconciliationPolicy,
     hits_emitted: u32,
@@ -825,14 +740,13 @@ struct RoutingSink<'a, S: SubjectRef, Selection, Focus, View, Recent, A, E, Veri
     hits_rejected: u32,
 }
 
-impl<'a, S: SubjectRef, Selection, Focus, View, Recent, A, E, Verifier>
-    RoutingSink<'a, S, Selection, Focus, View, Recent, A, E, Verifier>
+impl<'a, S: SubjectRef, Context, A, E, Verifier> RoutingSink<'a, S, Context, A, E, Verifier>
 where
-    Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+    Verifier: HitVerifier<S, Context, A, E>,
 {
     fn new(
         retained: &'a mut RetainedHits<S, A, E>,
-        context: &'a RetrievalContext<Selection, Focus, View, Recent>,
+        context: &'a RetrievalContext<Context>,
         verifier: &'a Verifier,
         reconciliation_policy: ReconciliationPolicy,
     ) -> Self {
@@ -865,10 +779,10 @@ where
     }
 }
 
-impl<S: SubjectRef, Selection, Focus, View, Recent, A, E, Verifier> CandidateSink<S, A, E>
-    for RoutingSink<'_, S, Selection, Focus, View, Recent, A, E, Verifier>
+impl<S: SubjectRef, Context, A, E, Verifier> CandidateSink<S, A, E>
+    for RoutingSink<'_, S, Context, A, E, Verifier>
 where
-    Verifier: HitVerifier<S, Selection, Focus, View, Recent, A, E>,
+    Verifier: HitVerifier<S, Context, A, E>,
 {
     fn push(&mut self, mut hit: PortolanHit<S, A, E>) {
         if matches!(
@@ -952,7 +866,7 @@ mod tests {
         );
 
         assert_eq!(
-            verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+            verifier.verify_hit(&mut hit, &RetrievalContext::default()),
             VerificationOutcome::Reject
         );
     }
@@ -975,7 +889,7 @@ mod tests {
         );
 
         assert_eq!(
-            verifier.verify_hit(&mut hit, &RetrievalContext::<(), (), (), ()>::default()),
+            verifier.verify_hit(&mut hit, &RetrievalContext::default()),
             VerificationOutcome::Reject
         );
         assert_eq!(hit.score, Score::new(1.0));

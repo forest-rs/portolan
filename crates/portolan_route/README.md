@@ -16,3 +16,7 @@ truth before they reach the caller sink.
 For common host checks, `subject_verifier(...)` lets callers verify by subject
 identity and explicit retrieval context without mutating the full hit. Verifier
 composition stays small and explicit through `HitVerifierExt::and(...)`.
+
+That retrieval context is now one host-defined snapshot per surface, so routing
+and verification do not force callers to thread placeholder selection, focus,
+or view types when one calmer host context is enough.

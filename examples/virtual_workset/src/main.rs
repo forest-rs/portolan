@@ -49,6 +49,7 @@ struct VisibleWorkset {
     entities: Vec<VisibleEntity>,
 }
 
+type DemoContext = RetrievalContext<VisibleWorkset>;
 type DemoEvidence = &'static str;
 
 struct CommandProjector;
@@ -76,23 +77,13 @@ impl ProjectSubject<CommandRecord, DemoSubject, StandardAffordance, CommandMetad
 
 struct VisibleWorksetSource;
 
-impl
-    RetrievalSource<
-        DemoSubject,
-        (),
-        (),
-        (),
-        (),
-        VisibleWorkset,
-        (),
-        StandardAffordance,
-        DemoEvidence,
-    > for VisibleWorksetSource
+impl RetrievalSource<DemoSubject, (), (), VisibleWorkset, StandardAffordance, DemoEvidence>
+    for VisibleWorksetSource
 {
     fn retrieve_into(
         &self,
         query: &PortolanQuery,
-        context: &RetrievalContext<(), (), VisibleWorkset, ()>,
+        context: &DemoContext,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<DemoSubject, StandardAffordance, DemoEvidence>,
     ) {
@@ -102,7 +93,7 @@ impl
             | ParsedQuery::Structured { text, .. } => text.to_ascii_lowercase(),
         };
 
-        let Some(workset) = &context.visible_view else {
+        let Some(workset) = context.host.as_ref() else {
             return;
         };
 
@@ -136,18 +127,8 @@ impl
     }
 }
 
-impl
-    StagedRetrievalSource<
-        DemoSubject,
-        (),
-        (),
-        (),
-        (),
-        VisibleWorkset,
-        (),
-        StandardAffordance,
-        DemoEvidence,
-    > for VisibleWorksetSource
+impl StagedRetrievalSource<DemoSubject, (), (), VisibleWorkset, StandardAffordance, DemoEvidence>
+    for VisibleWorksetSource
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Virtual
@@ -164,35 +145,15 @@ impl<Inner> MaterializedSource<Inner> {
     }
 }
 
-impl<Inner>
-    RetrievalSource<
-        DemoSubject,
-        (),
-        (),
-        (),
-        (),
-        VisibleWorkset,
-        (),
-        StandardAffordance,
-        DemoEvidence,
-    > for MaterializedSource<Inner>
+impl<Inner> RetrievalSource<DemoSubject, (), (), VisibleWorkset, StandardAffordance, DemoEvidence>
+    for MaterializedSource<Inner>
 where
-    Inner: RetrievalSource<
-            DemoSubject,
-            (),
-            (),
-            (),
-            (),
-            VisibleWorkset,
-            (),
-            StandardAffordance,
-            DemoEvidence,
-        >,
+    Inner: RetrievalSource<DemoSubject, (), (), VisibleWorkset, StandardAffordance, DemoEvidence>,
 {
     fn retrieve_into(
         &self,
         query: &PortolanQuery,
-        context: &RetrievalContext<(), (), VisibleWorkset, ()>,
+        context: &DemoContext,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<DemoSubject, StandardAffordance, DemoEvidence>,
     ) {
@@ -201,29 +162,10 @@ where
 }
 
 impl<Inner>
-    StagedRetrievalSource<
-        DemoSubject,
-        (),
-        (),
-        (),
-        (),
-        VisibleWorkset,
-        (),
-        StandardAffordance,
-        DemoEvidence,
-    > for MaterializedSource<Inner>
+    StagedRetrievalSource<DemoSubject, (), (), VisibleWorkset, StandardAffordance, DemoEvidence>
+    for MaterializedSource<Inner>
 where
-    Inner: RetrievalSource<
-            DemoSubject,
-            (),
-            (),
-            (),
-            (),
-            VisibleWorkset,
-            (),
-            StandardAffordance,
-            DemoEvidence,
-        >,
+    Inner: RetrievalSource<DemoSubject, (), (), VisibleWorkset, StandardAffordance, DemoEvidence>,
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Materialized
@@ -277,8 +219,8 @@ fn subject_label(subject: &DemoSubject) -> &'static str {
     }
 }
 
-fn visible_entity_lines(context: &RetrievalContext<(), (), VisibleWorkset, ()>) -> Vec<String> {
-    match &context.visible_view {
+fn visible_entity_lines(context: &DemoContext) -> Vec<String> {
+    match &context.host {
         Some(workset) => workset
             .entities
             .iter()
@@ -338,27 +280,22 @@ fn main() {
         max_nodes_scanned: 256,
         max_time_us: 5_000,
     };
-    let context = RetrievalContext {
-        selection: None,
-        focus: None,
-        visible_view: Some(VisibleWorkset {
-            entities: vec![
-                VisibleEntity {
-                    id: "entity.camera.main",
-                    label: "Main Camera",
-                },
-                VisibleEntity {
-                    id: "entity.camera.preview",
-                    label: "Preview Camera",
-                },
-                VisibleEntity {
-                    id: "entity.light.key",
-                    label: "Key Light",
-                },
-            ],
-        }),
-        recent: None,
-    };
+    let context = RetrievalContext::with_host(VisibleWorkset {
+        entities: vec![
+            VisibleEntity {
+                id: "entity.camera.main",
+                label: "Main Camera",
+            },
+            VisibleEntity {
+                id: "entity.camera.preview",
+                label: "Preview Camera",
+            },
+            VisibleEntity {
+                id: "entity.light.key",
+                label: "Key Light",
+            },
+        ],
+    });
     let mut sink = CandidateBuffer::<DemoSubject, StandardAffordance, DemoEvidence>::new();
 
     println!("Portolan virtual workset example");
@@ -434,12 +371,7 @@ mod tests {
 
     #[test]
     fn renders_missing_visible_workset_without_panicking() {
-        let context = RetrievalContext::<(), (), VisibleWorkset, ()> {
-            selection: None,
-            focus: None,
-            visible_view: None,
-            recent: None,
-        };
+        let context = RetrievalContext::<VisibleWorkset>::default();
 
         let lines = visible_entity_lines(&context);
 

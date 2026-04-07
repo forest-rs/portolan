@@ -219,7 +219,7 @@ fn routes_materialized_sources_before_contextual_sources() {
         RoutePlan::standard(),
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &mut sink,
     );
@@ -284,7 +284,7 @@ fn stops_after_stage_hit_limit_before_later_stages() {
         },
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &mut sink,
     );
@@ -341,7 +341,7 @@ fn deduplicates_subjects_across_stages_when_requested() {
         },
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &mut sink,
     );
@@ -391,7 +391,7 @@ fn later_stage_can_trigger_total_hit_stop_after_empty_earlier_stage() {
         },
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &mut sink,
     );
@@ -443,7 +443,7 @@ fn verification_rejects_hits_before_they_pollute_duplicate_tracking() {
         },
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &|hit: &mut PortolanHit<DemoSubject>, _context: &RetrievalContext| {
             if hit.subject == DemoSubject("command.open_scene")
@@ -508,7 +508,7 @@ fn suppressed_duplicates_do_not_count_toward_total_hit_stops() {
         },
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &mut sink,
     );
@@ -563,7 +563,7 @@ fn keeps_higher_scoring_subject_when_requested() {
         },
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &mut sink,
     );

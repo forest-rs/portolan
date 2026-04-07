@@ -75,16 +75,20 @@ struct PaletteTruth {
     recent_ids: Vec<&'static str>,
 }
 
-type PaletteContext = RetrievalContext<PaletteTruth, (), PaletteView, PaletteRecent>;
+#[derive(Clone, Debug)]
+struct PaletteHost {
+    truth: PaletteTruth,
+    view: PaletteView,
+    recent: PaletteRecent,
+}
+
+type PaletteContext = RetrievalContext<PaletteHost>;
 type PaletteEvidence = &'static str;
 type PaletteSourceRef<'a> = &'a dyn StagedRetrievalSource<
     PaletteSubject,
     (),
     (),
-    PaletteTruth,
-    (),
-    PaletteView,
-    PaletteRecent,
+    PaletteHost,
     StandardAffordance,
     PaletteEvidence,
 >;
@@ -179,18 +183,8 @@ impl ProjectSubject<CommandRecord, PaletteSubject, StandardAffordance, CommandMe
 
 struct RecentSource;
 
-impl
-    RetrievalSource<
-        PaletteSubject,
-        (),
-        (),
-        PaletteTruth,
-        (),
-        PaletteView,
-        PaletteRecent,
-        StandardAffordance,
-        PaletteEvidence,
-    > for RecentSource
+impl RetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>
+    for RecentSource
 {
     fn retrieve_into(
         &self,
@@ -204,14 +198,14 @@ impl
             | ParsedQuery::Scoped { text, .. }
             | ParsedQuery::Structured { text, .. } => text.to_ascii_lowercase(),
         };
-        let Some(recent) = &context.recent else {
+        let Some(host) = context.host.as_ref() else {
             return;
         };
         let limit = usize::try_from(budget.max_candidates_per_source)
             .expect("candidate budget should fit in usize");
         let mut emitted = 0_usize;
 
-        for entry in &recent.entries {
+        for entry in &host.recent.entries {
             if emitted >= limit {
                 break;
             }
@@ -240,18 +234,8 @@ impl
     }
 }
 
-impl
-    StagedRetrievalSource<
-        PaletteSubject,
-        (),
-        (),
-        PaletteTruth,
-        (),
-        PaletteView,
-        PaletteRecent,
-        StandardAffordance,
-        PaletteEvidence,
-    > for RecentSource
+impl StagedRetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>
+    for RecentSource
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Contextual
@@ -260,18 +244,8 @@ impl
 
 struct VisibleObjectSource;
 
-impl
-    RetrievalSource<
-        PaletteSubject,
-        (),
-        (),
-        PaletteTruth,
-        (),
-        PaletteView,
-        PaletteRecent,
-        StandardAffordance,
-        PaletteEvidence,
-    > for VisibleObjectSource
+impl RetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>
+    for VisibleObjectSource
 {
     fn retrieve_into(
         &self,
@@ -285,14 +259,14 @@ impl
             | ParsedQuery::Scoped { text, .. }
             | ParsedQuery::Structured { text, .. } => text.to_ascii_lowercase(),
         };
-        let Some(view) = &context.visible_view else {
+        let Some(host) = context.host.as_ref() else {
             return;
         };
         let limit = usize::try_from(budget.max_virtual_expansions)
             .expect("virtual budget should fit in usize");
         let mut emitted = 0_usize;
 
-        for object in &view.objects {
+        for object in &host.view.objects {
             if emitted >= limit {
                 break;
             }
@@ -320,18 +294,8 @@ impl
     }
 }
 
-impl
-    StagedRetrievalSource<
-        PaletteSubject,
-        (),
-        (),
-        PaletteTruth,
-        (),
-        PaletteView,
-        PaletteRecent,
-        StandardAffordance,
-        PaletteEvidence,
-    > for VisibleObjectSource
+impl StagedRetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>
+    for VisibleObjectSource
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Virtual
@@ -349,29 +313,11 @@ impl<Inner> MaterializedSource<Inner> {
 }
 
 impl<Inner>
-    RetrievalSource<
-        PaletteSubject,
-        (),
-        (),
-        PaletteTruth,
-        (),
-        PaletteView,
-        PaletteRecent,
-        StandardAffordance,
-        PaletteEvidence,
-    > for MaterializedSource<Inner>
+    RetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>
+    for MaterializedSource<Inner>
 where
-    Inner: RetrievalSource<
-            PaletteSubject,
-            (),
-            (),
-            PaletteTruth,
-            (),
-            PaletteView,
-            PaletteRecent,
-            StandardAffordance,
-            PaletteEvidence,
-        >,
+    Inner:
+        RetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>,
 {
     fn retrieve_into(
         &self,
@@ -385,29 +331,11 @@ where
 }
 
 impl<Inner>
-    StagedRetrievalSource<
-        PaletteSubject,
-        (),
-        (),
-        PaletteTruth,
-        (),
-        PaletteView,
-        PaletteRecent,
-        StandardAffordance,
-        PaletteEvidence,
-    > for MaterializedSource<Inner>
+    StagedRetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>
+    for MaterializedSource<Inner>
 where
-    Inner: RetrievalSource<
-            PaletteSubject,
-            (),
-            (),
-            PaletteTruth,
-            (),
-            PaletteView,
-            PaletteRecent,
-            StandardAffordance,
-            PaletteEvidence,
-        >,
+    Inner:
+        RetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>,
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Materialized
@@ -467,16 +395,18 @@ impl<'a> CommandPalette<'a> {
                  context: &PaletteContext| {
                     let present = match &hit.subject {
                         PaletteSubject::Command(_) => true,
-                        PaletteSubject::Object(id) => {
-                            context.selection.as_ref().is_some_and(|truth| {
-                                truth.object_ids.iter().any(|candidate| candidate == id)
-                            })
-                        }
-                        PaletteSubject::Recent(id) => {
-                            context.selection.as_ref().is_some_and(|truth| {
-                                truth.recent_ids.iter().any(|candidate| candidate == id)
-                            })
-                        }
+                        PaletteSubject::Object(id) => context.host.as_ref().is_some_and(|host| {
+                            host.truth
+                                .object_ids
+                                .iter()
+                                .any(|candidate| candidate == id)
+                        }),
+                        PaletteSubject::Recent(id) => context.host.as_ref().is_some_and(|host| {
+                            host.truth
+                                .recent_ids
+                                .iter()
+                                .any(|candidate| candidate == id)
+                        }),
                     };
 
                     if present {
@@ -542,15 +472,15 @@ impl<'a> CommandPalette<'a> {
                 },
             ),
             PaletteSubject::Object(id) => context
-                .visible_view
+                .host
                 .as_ref()
-                .and_then(|view| view.objects.iter().find(|object| object.id == *id))
+                .and_then(|host| host.view.objects.iter().find(|object| object.id == *id))
                 .map(|object| (object.label.to_owned(), object.subtitle.to_owned()))
                 .unwrap_or_else(|| self.stale_subject_text(subject)),
             PaletteSubject::Recent(id) => context
-                .recent
+                .host
                 .as_ref()
-                .and_then(|recent| recent.entries.iter().find(|entry| entry.id == *id))
+                .and_then(|host| host.recent.entries.iter().find(|entry| entry.id == *id))
                 .map(|entry| (entry.title.to_owned(), entry.subtitle.to_owned()))
                 .unwrap_or_else(|| self.stale_subject_text(subject)),
         }
@@ -665,17 +595,16 @@ fn main() {
         ],
         &catalog,
     );
-    let context = PaletteContext {
-        selection: Some(PaletteTruth {
+    let context = RetrievalContext::with_host(PaletteHost {
+        truth: PaletteTruth {
             object_ids: vec![
                 "object.camera.main",
                 "object.camera.preview",
                 "object.light.key",
             ],
             recent_ids: vec!["recent.camera_panel"],
-        }),
-        focus: None,
-        visible_view: Some(PaletteView {
+        },
+        view: PaletteView {
             objects: vec![
                 VisibleObject {
                     id: "object.camera.main",
@@ -693,8 +622,8 @@ fn main() {
                     subtitle: "Visible object in viewport",
                 },
             ],
-        }),
-        recent: Some(PaletteRecent {
+        },
+        recent: PaletteRecent {
             entries: vec![
                 RecentEntry {
                     id: "recent.camera_panel",
@@ -712,8 +641,8 @@ fn main() {
                     subtitle: "Cached stale suggestion",
                 },
             ],
-        }),
-    };
+        },
+    });
 
     println!("Portolan command palette example");
     println!();
@@ -842,18 +771,8 @@ mod tests {
 
     struct NoopSource;
 
-    impl
-        RetrievalSource<
-            PaletteSubject,
-            (),
-            (),
-            PaletteTruth,
-            (),
-            PaletteView,
-            PaletteRecent,
-            StandardAffordance,
-            PaletteEvidence,
-        > for NoopSource
+    impl RetrievalSource<PaletteSubject, (), (), PaletteHost, StandardAffordance, PaletteEvidence>
+        for NoopSource
     {
         fn retrieve_into(
             &self,
@@ -870,10 +789,7 @@ mod tests {
             PaletteSubject,
             (),
             (),
-            PaletteTruth,
-            (),
-            PaletteView,
-            PaletteRecent,
+            PaletteHost,
             StandardAffordance,
             PaletteEvidence,
         > for NoopSource
@@ -886,19 +802,18 @@ mod tests {
     #[test]
     fn renders_stale_subjects_without_panicking() {
         let palette = empty_palette();
-        let context = PaletteContext {
-            selection: Some(PaletteTruth {
+        let context = RetrievalContext::with_host(PaletteHost {
+            truth: PaletteTruth {
                 object_ids: Vec::new(),
                 recent_ids: Vec::new(),
-            }),
-            focus: None,
-            visible_view: Some(PaletteView {
+            },
+            view: PaletteView {
                 objects: Vec::new(),
-            }),
-            recent: Some(PaletteRecent {
+            },
+            recent: PaletteRecent {
                 entries: Vec::new(),
-            }),
-        };
+            },
+        });
 
         let command = palette.subject_text(&PaletteSubject::Command("command.missing"), &context);
         let object = palette.subject_text(&PaletteSubject::Object("object.missing"), &context);
@@ -966,16 +881,15 @@ mod tests {
             ],
             catalog,
         );
-        let context = PaletteContext {
-            selection: Some(PaletteTruth {
+        let context = RetrievalContext::with_host(PaletteHost {
+            truth: PaletteTruth {
                 object_ids: vec![],
                 recent_ids: vec!["recent.camera_panel"],
-            }),
-            focus: None,
-            visible_view: Some(PaletteView {
+            },
+            view: PaletteView {
                 objects: Vec::new(),
-            }),
-            recent: Some(PaletteRecent {
+            },
+            recent: PaletteRecent {
                 entries: vec![
                     RecentEntry {
                         id: "recent.camera_panel",
@@ -988,8 +902,8 @@ mod tests {
                         subtitle: "Cached stale suggestion",
                     },
                 ],
-            }),
-        };
+            },
+        });
 
         let response = palette.search("camera", &context);
 

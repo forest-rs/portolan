@@ -70,10 +70,7 @@ pub trait RetrievalSource<
     S: SubjectRef,
     Scope = (),
     Filter = (),
-    Selection = (),
-    Focus = (),
-    View = (),
-    Recent = (),
+    Context = (),
     A = portolan_core::StandardAffordance,
     E = (),
 >
@@ -82,7 +79,7 @@ pub trait RetrievalSource<
     fn retrieve_into(
         &self,
         query: &PortolanQuery<Scope, Filter>,
-        context: &RetrievalContext<Selection, Focus, View, Recent>,
+        context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<S, A, E>,
     );

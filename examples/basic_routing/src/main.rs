@@ -34,7 +34,8 @@ struct CommandMetadata {
     title: &'static str,
 }
 
-type DemoSourceRef<'a> = &'a dyn StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>;
+type DemoSourceRef<'a> =
+    &'a dyn StagedRetrievalSource<DemoSubject, (), (), (), StandardAffordance, &'static str>;
 type LabeledDemoSource<'a> = (&'a str, DemoSourceRef<'a>);
 
 struct CommandProjector;
@@ -60,9 +61,7 @@ impl ProjectSubject<CommandRecord, DemoSubject, StandardAffordance, CommandMetad
 
 struct ContextSource;
 
-impl RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
-    for ContextSource
-{
+impl RetrievalSource<DemoSubject, (), (), (), StandardAffordance, &'static str> for ContextSource {
     fn retrieve_into(
         &self,
         query: &PortolanQuery,
@@ -89,7 +88,7 @@ impl RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'
     }
 }
 
-impl StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+impl StagedRetrievalSource<DemoSubject, (), (), (), StandardAffordance, &'static str>
     for ContextSource
 {
     fn stage(&self) -> RouteStage {
@@ -107,10 +106,10 @@ impl<Inner> MaterializedSource<Inner> {
     }
 }
 
-impl<Inner> RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+impl<Inner> RetrievalSource<DemoSubject, (), (), (), StandardAffordance, &'static str>
     for MaterializedSource<Inner>
 where
-    Inner: RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>,
+    Inner: RetrievalSource<DemoSubject, (), (), (), StandardAffordance, &'static str>,
 {
     fn retrieve_into(
         &self,
@@ -123,11 +122,10 @@ where
     }
 }
 
-impl<Inner>
-    StagedRetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>
+impl<Inner> StagedRetrievalSource<DemoSubject, (), (), (), StandardAffordance, &'static str>
     for MaterializedSource<Inner>
 where
-    Inner: RetrievalSource<DemoSubject, (), (), (), (), (), (), StandardAffordance, &'static str>,
+    Inner: RetrievalSource<DemoSubject, (), (), (), StandardAffordance, &'static str>,
 {
     fn stage(&self) -> RouteStage {
         RouteStage::Materialized
@@ -274,7 +272,7 @@ fn main() {
         plan,
         &sources,
         &query,
-        &RetrievalContext::<(), (), (), ()>::default(),
+        &RetrievalContext::default(),
         RetrievalBudget::interactive_default(),
         &mut sink,
     );

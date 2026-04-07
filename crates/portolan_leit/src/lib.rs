@@ -297,9 +297,8 @@ impl<'a, Mapper, Lowerer, Enricher> LeitSource<'a, Mapper, Lowerer, Enricher> {
     }
 }
 
-impl<'a, Mapper, Lowerer, Enricher, S, Scope, Filter, Selection, Focus, View, Recent, A, E>
-    RetrievalSource<S, Scope, Filter, Selection, Focus, View, Recent, A, E>
-    for LeitSource<'a, Mapper, Lowerer, Enricher>
+impl<'a, Mapper, Lowerer, Enricher, S, Scope, Filter, Context, A, E>
+    RetrievalSource<S, Scope, Filter, Context, A, E> for LeitSource<'a, Mapper, Lowerer, Enricher>
 where
     S: SubjectRef,
     Mapper: SubjectMapper<S>,
@@ -309,7 +308,7 @@ where
     fn retrieve_into(
         &self,
         query: &PortolanQuery<Scope, Filter>,
-        _context: &RetrievalContext<Selection, Focus, View, Recent>,
+        _context: &RetrievalContext<Context>,
         budget: RetrievalBudget,
         out: &mut dyn CandidateSink<S, A, E>,
     ) {

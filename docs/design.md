@@ -18,9 +18,9 @@ materialized and on-demand sources.
 ## Fence
 
 Portolan owns typed candidate retrieval over host-defined subjects, including
-query envelopes, context transport, budgets, provenance, affordance
-description, and source composition. It does not own lexical indexing,
-canonical world state, or host action execution.
+query envelopes, one explicit host-defined context snapshot, budgets,
+provenance, affordance description, and source composition. It does not own
+lexical indexing, canonical world state, or host action execution.
 
 ## Invariants
 
@@ -28,6 +28,8 @@ canonical world state, or host action execution.
 - Subjects remain host-defined at the edges.
 - Hits carry provenance and affordances, not only scores.
 - Retrieval context is explicit input, not hidden ambient state.
+- Portolan transports one host context snapshot rather than hard-coding
+  multiple semantic lanes such as selection or focus.
 - Expensive work is budgeted and staged.
 - Portolan may resolve affordances into host actions, but never executes those
   actions itself.

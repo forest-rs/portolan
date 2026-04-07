@@ -6,7 +6,8 @@ partially materialized world.
 Portolan is a workspace of small crates that sits above `leit_*`.
 `leit_*` owns lexical retrieval kernels and index execution.
 `portolan_*` owns typed candidate retrieval over host-defined subjects, with
-explicit context, budgets, provenance, and affordances.
+one explicit host-defined context snapshot, budgets, provenance, and
+affordances.
 
 The crate boundaries are intentional. Each crate owns one concern and exposes a
 small public surface.
@@ -74,11 +75,9 @@ Verification now has a small ergonomic surface in `portolan_route`, and the
 command-palette example demonstrates composing host-truth checks without a
 custom verifier type.
 
-## Migration Notes
-
-- `ProjectionCatalog::insert` and `ProjectionCatalog::from_projections` now return `Result` and reject duplicate subjects. Existing call sites should handle or `expect(...)` that error explicitly.
-- `DuplicatePolicy` has been replaced by `ReconciliationPolicy`, and `RoutePolicy` now uses `reconciliation_policy`. Routed traces also report `hits_replaced` when a later same-subject hit replaces an earlier retained hit.
-- `RetrievalRouter` now supports optional hit verification via the `retrieve_verified_*` and `retrieve_traced_verified_*` methods. Routed traces and stats also report `hits_rejected` when verification drops candidates.
+Retrieval context has also been simplified to one host-defined snapshot per
+surface, so examples no longer need placeholder lanes for selection, focus,
+view, or recents when those concepts are not all independently meaningful.
 
 ## Verification
 

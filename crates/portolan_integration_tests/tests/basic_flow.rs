@@ -46,7 +46,7 @@ impl RetrievalSource<DemoSubject> for DemoSource {
 #[test]
 fn retrieves_typed_actionable_candidates() {
     let query = PortolanQuery::<(), ()>::text("open");
-    let context = RetrievalContext::<(), (), (), ()>::default();
+    let context = RetrievalContext::default();
     let budget = RetrievalBudget::interactive_default();
     let source = DemoSource;
     let mut sink = CandidateBuffer::<DemoSubject>::new();
