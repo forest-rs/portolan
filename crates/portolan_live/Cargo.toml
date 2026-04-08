@@ -1,5 +1,5 @@
 [package]
-name = "portolan"
+name = "portolan_live"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,7 +7,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "Curated facade crate for Portolan structured retrieval"
+description = "Live query sessions and incremental search updates for Portolan"
 readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
@@ -16,28 +16,15 @@ categories.workspace = true
 default = ["std"]
 std = [
     "portolan_core/std",
-    "portolan_live/std",
-    "portolan_observe/std",
     "portolan_query/std",
     "portolan_route/std",
     "portolan_source/std",
-    "portolan_schema?/std",
-    "portolan_ingest?/std",
-    "portolan_leit?/std",
 ]
-schema = ["dep:portolan_schema"]
-ingest = ["dep:portolan_ingest", "schema"]
-leit = ["dep:portolan_leit", "schema"]
 
 [dependencies]
 portolan_core = { workspace = true }
-portolan_ingest = { optional = true, workspace = true }
-portolan_leit = { optional = true, workspace = true }
-portolan_live = { workspace = true }
-portolan_observe = { workspace = true }
 portolan_query = { workspace = true }
 portolan_route = { workspace = true }
-portolan_schema = { optional = true, workspace = true }
 portolan_source = { workspace = true }
 
 [lints]

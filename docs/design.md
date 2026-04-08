@@ -110,6 +110,11 @@ lexical indexing, canonical world state, or host action execution.
 - `portolan_observe`
   - Owns generic trace records for retrieval execution and later diagnostics.
   - Explicitly does not own routing policy or source execution.
+- `portolan_live`
+  - Owns live query sessions, patch/event vocabulary, snapshot lifting, and
+    one calm coordinated observation model over several sources.
+  - Explicitly does not own async runtimes, remote transport, or merged-hit
+    fusion semantics.
 - `portolan_schema`
   - Owns host projection records and the materialized field contract used by
     ingest or index-building layers.
