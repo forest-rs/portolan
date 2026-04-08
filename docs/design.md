@@ -15,6 +15,20 @@ Portolan is not a UI component and not a search engine. It is the layer that
 turns queries into typed, actionable, explainable candidates drawn from both
 materialized and on-demand sources.
 
+Concretely, that means a host can issue a query such as `"camera"` and retrieve
+results from:
+
+- a materialized index of commands or documents
+- recent history
+- a visible workset or other live scan
+
+and receive one routed stream of typed hits that still knows:
+
+- what subject each result refers to
+- where it came from
+- why it matched
+- what the surface can do with it
+
 ## Fence
 
 Portolan owns typed candidate retrieval over host-defined subjects, including

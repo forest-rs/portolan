@@ -7,12 +7,28 @@
 //! landmarks, and making progress through a world too large to hold all at
 //! once.
 //!
-//! That is the intended shape of this crate.
-//! Portolan sits between canonical host state, retrieval engines such as
-//! `leit_*`, and interaction surfaces such as palettes, pickers, inspectors,
-//! or automation systems. It is not a UI crate and not a retrieval kernel.
-//! It is the layer that turns queries plus live host context into typed,
-//! actionable, explainable candidates.
+//! Portolan helps hosts build command palettes, omniboxes, object pickers,
+//! inspector search, and similar surfaces that need to search live things and
+//! act on them.
+//!
+//! It sits between canonical host state, retrieval engines such as `leit_*`,
+//! and interaction surfaces such as palettes, pickers, inspectors, or
+//! automation systems. It is not a UI crate and not a retrieval kernel. It is
+//! the layer that turns queries plus live host context into typed, actionable,
+//! explainable candidates.
+//!
+//! In a typical flow, a host:
+//! - defines its own subject type, such as commands or objects
+//! - exposes one or more retrieval sources, such as a materialized
+//!   [`crate::leit`] index, recents, or a visible workset
+//! - routes one [`PortolanQuery`] plus one host-defined [`RetrievalContext`]
+//! - receives [`PortolanHit`] values that carry score, provenance, evidence,
+//!   and affordances
+//! - resolves selected [`Affordance`] values back into host actions
+//!
+//! If you already have a search backend but still need to combine it with live
+//! application state, verification, and surface-facing actions, this crate is
+//! the layer above that backend.
 //!
 //! This facade crate is the preferred way into the Portolan workspace when you
 //! want the main retrieval path without importing many `portolan_*` crates
@@ -29,6 +45,11 @@
 //! - package one host-defined [`RetrievalContext`]
 //! - run sources through a [`RetrievalRouter`]
 //! - receive typed [`PortolanHit`] values with [`Evidence`] and [`Affordance`]
+//!
+//! For a fuller end-to-end example, see the workspace examples:
+//! - `examples/command_palette`
+//! - `examples/basic_routing`
+//! - `examples/virtual_workset`
 //!
 //! ```
 //! use portolan::{PortolanQuery, RetrievalContext, RetrievalRouter, RoutePlan};
