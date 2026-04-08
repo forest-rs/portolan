@@ -25,6 +25,10 @@ results with live contextual sources such as recents or visible objects,
 verifies the surviving subjects against host truth, and returns typed hits that
 say both what matched and what the user can do with it.
 
+When a surface needs progressive retrieval instead of a one-shot result list,
+Portolan can also open a live query session and emit incremental patches as
+sources reveal, revise, or complete results over time.
+
 Portolan is a workspace of small crates that sits above `leit_*`. `leit_*`
 owns lexical retrieval kernels and index execution. `portolan_*` owns typed
 candidate retrieval over host-defined subjects, with one explicit host-defined
@@ -50,6 +54,12 @@ Portolan gives you a retrieval pipeline for live applications:
    - virtual sources such as a visible workset scan
 3. Portolan routes, verifies, and reconciles those candidates, then returns
    typed hits with scores, provenance, evidence, and affordances.
+
+For progressive surfaces, Portolan can also:
+
+4. open a live query session across several sources
+5. emit incremental patch events with stable ids as results are inserted,
+   replaced, moved, or removed
 
 That means a surface can ask for "camera" and receive results like:
 
@@ -150,6 +160,7 @@ Its tests run under `std`.
 - `portolan_core`: typed hits, affordances, provenance, budgets, and resolver seams
 - `portolan_ingest`: materialization from projected subjects into retrieval backends
 - `portolan_leit`: adapters that lower Portolan retrieval into `leit_*`
+- `portolan_live`: live query sessions, patch events, and multi-source coordination
 - `portolan_observe`: retrieval trace records and observation helpers
 - `portolan_query`: small, host-extensible query model
 - `portolan_route`: staged, multi-source retrieval orchestration
@@ -164,6 +175,7 @@ dev-dependencies.
 
 - `examples/basic_routing`: Leit-backed plus contextual routing over projected subjects
 - `examples/command_palette`: a host-facing command palette API built on the `portolan` facade
+- `examples/live_session`: session-based progressive retrieval with incremental patches
 - `examples/virtual_workset`: Leit-backed plus visible-workset virtual retrieval
 
 ## Planned crates

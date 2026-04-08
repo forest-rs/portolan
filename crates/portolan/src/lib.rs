@@ -46,9 +46,16 @@
 //! - run sources through a [`RetrievalRouter`]
 //! - receive typed [`PortolanHit`] values with [`Evidence`] and [`Affordance`]
 //!
+//! For progressive or revisable retrieval, Portolan also exposes a live query
+//! path:
+//! - open a [`LiveCoordinator`] session
+//! - poll coordinated [`SearchEvent`] values
+//! - apply [`SessionPatchOp`] updates using stable [`SessionResultId`] values
+//!
 //! For a fuller end-to-end example, see the workspace examples:
 //! - `examples/command_palette`
 //! - `examples/basic_routing`
+//! - `examples/live_session`
 //! - `examples/virtual_workset`
 //!
 //! ```
@@ -79,6 +86,14 @@ pub mod core {
 /// access to retrieval trace types such as [`RetrievalTrace`].
 pub mod observe {
     pub use portolan_observe::*;
+}
+
+/// Live query sessions and incremental updates.
+///
+/// This module exposes the `portolan_live` crate for callers that need
+/// progressive, revisable retrieval instead of one-shot source execution.
+pub mod live {
+    pub use portolan_live::*;
 }
 
 /// Query envelope types.
@@ -132,6 +147,12 @@ pub mod leit {
 pub use portolan_core::{
     Affordance, AffordanceResolver, Evidence, FieldId, PortolanHit, RetrievalBudget,
     RetrievalContext, RetrievalOrigin, Score, StandardAffordance, SubjectRef,
+};
+pub use portolan_live::{
+    LiveCoordinator, LiveCoordinatorSession, LiveSession, LiveSource, LocalResultId, PollOutcome,
+    QuerySessionId, Revision, SearchEvent, SearchEventBuffer, SessionPatchOp, SessionResultId,
+    SnapshotLiveSource, SourceCapabilities, SourceEventBuffer, SourcePatchOp, SourceSearchEvent,
+    SourceState, StagedLiveSource, StagedSnapshotSource, StatusUpdate,
 };
 pub use portolan_observe::{RetrievalTrace, StopReason};
 pub use portolan_query::{ParsedQuery, PortolanQuery};

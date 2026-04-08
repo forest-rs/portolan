@@ -13,6 +13,7 @@ Top-level exports cover the common retrieval path:
 
 - hits, evidence, affordances, budgets, and context
 - query envelopes
+- live sessions and incremental search events
 - candidate buffers and source traits
 - staged routing, verification, and reconciliation
 
@@ -22,6 +23,7 @@ features:
 - `portolan::schema` with feature `schema`
 - `portolan::ingest` with feature `ingest`
 - `portolan::leit` with feature `leit`
+- `portolan::live` always available for the session-based retrieval path
 - `portolan::observe` always available because routed tracing is part of the
   main retrieval path
 

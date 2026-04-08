@@ -5,6 +5,7 @@ members = [
     "crates/portolan_ingest",
     "crates/portolan_integration_tests",
     "crates/portolan_leit",
+    "crates/portolan_live",
     "crates/portolan_observe",
     "crates/portolan_query",
     "crates/portolan_route",
@@ -12,6 +13,7 @@ members = [
     "crates/portolan_source",
     "examples/basic_routing",
     "examples/command_palette",
+    "examples/live_session",
     "examples/virtual_workset",
 ]
 resolver = "2"
@@ -34,6 +36,7 @@ portolan_core = { default-features = false, path = "crates/portolan_core" }
 portolan_ingest = { default-features = false, path = "crates/portolan_ingest" }
 portolan_integration_tests = { path = "crates/portolan_integration_tests" }
 portolan_leit = { default-features = false, path = "crates/portolan_leit" }
+portolan_live = { default-features = false, path = "crates/portolan_live" }
 portolan_observe = { default-features = false, path = "crates/portolan_observe" }
 portolan_query = { default-features = false, path = "crates/portolan_query" }
 portolan_route = { default-features = false, path = "crates/portolan_route" }
