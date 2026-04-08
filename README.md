@@ -60,6 +60,43 @@ That means a surface can ask for "camera" and receive results like:
 Portolan is useful when not everything is fully indexed all the time and when
 results need to stay connected to live host state.
 
+## A Short Example
+
+Here is the shape of a host asking Portolan for candidates:
+
+```text
+query: "camera"
+context:
+  active surface: command palette
+  visible objects: [camera.main, light.key, mesh.floor]
+  recents: [camera.debug_overlay]
+
+sources:
+  - leit-backed command index
+  - recent-history source
+  - visible-workset source
+
+results:
+  1. command.open_camera_panel
+     score: 1.42
+     origin: materialized_index
+     affordances: [Execute]
+
+  2. object.camera.main
+     score: 0.61
+     origin: visible_workset
+     affordances: [Focus, Inspect]
+
+  3. recent.camera.debug_overlay
+     score: 0.20
+     origin: context_cache
+     affordances: [Open]
+```
+
+The important part is that these are not just strings. Each result still knows
+what subject it refers to, where it came from, and what the host can do with
+it.
+
 ## What It Is Not
 
 - Not a UI toolkit
